@@ -13,6 +13,8 @@ export default function Home() {
 
   const handleConnect = async () => {
     const connectedAccount = await Web3Lib.connectWallet();
+    console.log(connectedAccount);
+    console.log("teste");
     if (connectedAccount) {
       setAccount(connectedAccount);
       await fetchBalance(connectedAccount);
@@ -26,16 +28,16 @@ export default function Home() {
 
   const handleTransfer = async () => {
     if (!account) return;
-    
+
     setLoading(true);
     setStatus("Processando transferência...");
 
     try {
       const tx = await Web3Lib.transferTokens(recipient, amount);
       setStatus("Transação enviada! Aguardando confirmação...");
-      
+
       await tx.wait();
-      
+
       setStatus("Transferência concluída!");
       await fetchBalance(account);
       setAmount("");
@@ -62,7 +64,9 @@ export default function Home() {
           <h1 className="text-4xl font-black mb-2 tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-blue-400 via-indigo-400 to-purple-500">
             TokenLab
           </h1>
-          <p className="text-slate-500 text-sm font-medium">Ethereum ERC20 Dashboard</p>
+          <p className="text-slate-500 text-sm font-medium">
+            Ethereum ERC20 Dashboard
+          </p>
         </header>
 
         {!account ? (
@@ -77,21 +81,40 @@ export default function Home() {
           <div className="space-y-6">
             <section className="space-y-3">
               <div className="p-4 bg-slate-800/50 border border-slate-700/50 rounded-2xl">
-                <span className="text-[10px] text-slate-500 uppercase font-bold tracking-[0.2em] block mb-2">Carteira Ativa</span>
-                <p className="text-xs font-mono break-all text-blue-400/90">{account}</p>
+                <span className="text-[10px] text-slate-500 uppercase font-bold tracking-[0.2em] block mb-2">
+                  Carteira Ativa
+                </span>
+                <p className="text-xs font-mono break-all text-blue-400/90">
+                  {account}
+                </p>
               </div>
 
               <div className="p-5 bg-gradient-to-br from-indigo-600/20 to-blue-600/10 border border-indigo-500/20 rounded-2xl flex justify-between items-center">
                 <div>
-                  <span className="text-[10px] text-slate-500 uppercase font-bold tracking-[0.2em] block mb-1">Saldo em Token</span>
-                  <p className="text-3xl font-black text-white">{parseFloat(balance).toLocaleString()} <span className="text-lg font-medium text-slate-400">TTK</span></p>
+                  <span className="text-[10px] text-slate-500 uppercase font-bold tracking-[0.2em] block mb-1">
+                    Saldo em Token
+                  </span>
+                  <p className="text-3xl font-black text-white">
+                    {parseFloat(balance).toLocaleString()}{" "}
+                    <span className="text-lg font-medium text-slate-400">
+                      TTK
+                    </span>
+                  </p>
                 </div>
               </div>
             </section>
 
-            <form className="space-y-4 pt-6 border-t border-slate-800/50" onSubmit={(e) => { e.preventDefault(); handleTransfer(); }}>
+            <form
+              className="space-y-4 pt-6 border-t border-slate-800/50"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleTransfer();
+              }}
+            >
               <div>
-                <label className="text-[10px] text-slate-500 uppercase font-bold tracking-[0.2em] block mb-2 px-1">Destinatário</label>
+                <label className="text-[10px] text-slate-500 uppercase font-bold tracking-[0.2em] block mb-2 px-1">
+                  Destinatário
+                </label>
                 <input
                   type="text"
                   placeholder="0x..."
@@ -102,7 +125,9 @@ export default function Home() {
               </div>
 
               <div>
-                <label className="text-[10px] text-slate-500 uppercase font-bold tracking-[0.2em] block mb-2 px-1">Quantia</label>
+                <label className="text-[10px] text-slate-500 uppercase font-bold tracking-[0.2em] block mb-2 px-1">
+                  Quantia
+                </label>
                 <input
                   type="number"
                   placeholder="0.00"
@@ -119,7 +144,7 @@ export default function Home() {
               >
                 {loading ? "Processando..." : "Transferir Tokens"}
               </button>
-              
+
               {status && (
                 <div className="bg-blue-500/5 border border-blue-500/10 rounded-lg p-3 text-center">
                   <p className="text-[10px] animate-pulse text-blue-400 font-bold uppercase tracking-widest leading-none">
@@ -131,8 +156,8 @@ export default function Home() {
           </div>
         )}
       </div>
-      <footer className="mt-8 text-slate-600 text-[10px] uppercase tracking-widest font-bold">
-        Built with Hardhat & Next.js
+      <footer className="mt-8 text-slate-600 text-[10px] tracking-widest font-bold">
+        Built with Hardhat & Next by LinikerS
       </footer>
     </main>
   );
