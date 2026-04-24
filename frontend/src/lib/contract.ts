@@ -2,67 +2,79 @@ import { ethers } from "ethers";
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from "@/constants";
 
 /**
+ * Verifica se o MetaMask está disponível no navegador
+ */
+export const isMetaMaskAvailable = (): boolean => {
+  return typeof window !== "undefined" && Boolean(window.ethereum);
+};
+
+/**
  * Retorna uma instância do provedor Web3 (MetaMask)
+ * @throws Error se o MetaMask não estiver instalado
  */
 export const getProvider = () => {
-  if (typeof window !== "undefined" && window.ethereum) {
-    return new ethers.BrowserProvider(window.ethereum);
+  if (!isMetaMaskAvailable()) {
+    throw new Error("MetaMask não detectada. Instale a extensão para continuar.");
   }
-  throw new Error("MetaMask não detectada.");
+  return new ethers.BrowserProvider(window.ethereum!);
 };
 
 /**
  * Retorna uma instância do contrato para leitura ou escrita
+ * @param withSigner - true para operações de escrita (transfer, approve)
  */
 export const getContract = async (withSigner = false) => {
   const provider = getProvider();
-  
+
   if (withSigner) {
     const signer = await provider.getSigner();
     return new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
   }
-  
+
   return new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
 };
 
 /**
- * Busca o saldo de tokens de um endereço específico
+ * Solicita a conexão da wallet via MetaMask
+ * @throws Error se o MetaMask não estiver disponível ou o usuário recusar
  */
-export const getBalance = async (address: string): Promise<string> => {
-  try {
-    const contract = await getContract();
-    const balance = await contract.balanceOf(address);
-    const decimals = await contract.decimals();
-    return ethers.formatUnits(balance, decimals);
-  } catch (error) {
-    console.error("Erro ao buscar saldo:", error);
-    return "0";
+export const connectWallet = async (): Promise<string> => {
+  if (!isMetaMaskAvailable()) {
+    throw new Error("MetaMask não encontrada. Instale a extensão no seu navegador.");
   }
+
+  const accounts = await window.ethereum!.request({ method: "eth_requestAccounts" });
+
+  if (!accounts || accounts.length === 0) {
+    throw new Error("Nenhuma conta retornada pela MetaMask.");
+  }
+
+  return accounts[0];
 };
 
 /**
- * Realiza a transferência de tokens
+ * Busca o saldo de tokens de um endereço
+ * @throws Error se houver falha na comunicação com o contrato
  */
-export const transferTokens = async (to: string, amount: string): Promise<ethers.ContractTransactionResponse> => {
+export const getBalance = async (address: string): Promise<string> => {
+  const contract = await getContract();
+  const balance = await contract.balanceOf(address);
+  const decimals = await contract.decimals();
+  return ethers.formatUnits(balance, decimals);
+};
+
+/**
+ * Realiza a transferência de tokens para outro endereço
+ * @returns A transação enviada (use tx.wait() para aguardar confirmação)
+ * @throws Error se houver saldo insuficiente ou o usuário rejeitar
+ */
+export const transferTokens = async (
+  to: string,
+  amount: string
+): Promise<ethers.ContractTransactionResponse> => {
   const contract = await getContract(true);
   const decimals = await contract.decimals();
   const amountInWei = ethers.parseUnits(amount, decimals);
-  
-  return await contract.transfer(to, amountInWei);
-};
 
-/**
- * Solicita a conexão da wallet e retorna o primeiro endereço
- */
-export const connectWallet = async (): Promise<string | null> => {
-  if (typeof window !== "undefined" && window.ethereum) {
-    try {
-      const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
-      return accounts[0];
-    } catch (error) {
-      console.error("Erro ao conectar wallet:", error);
-      return null;
-    }
-  }
-  return null;
+  return await contract.transfer(to, amountInWei);
 };

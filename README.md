@@ -6,12 +6,12 @@ Um laboratório completo para desenvolvimento, deploy e interação com Smart Co
 
 ## 🚀 Tecnologias Utilizadas
 
-- **Solidity**: Linguagem para os Smart Contracts.
-- **OpenZeppelin**: Biblioteca padrão para contratos seguros.
-- **Hardhat**: Ambiente de desenvolvimento e testes para Ethereum.
-- **Next.js (App Router)**: Framework React para o frontend.
-- **Ethers.js**: Biblioteca para interagir com a Blockchain.
-- **Tailwind CSS**: Estilização moderna e responsiva.
+- **Solidity** — Linguagem para os Smart Contracts
+- **OpenZeppelin** — Biblioteca padrão para contratos seguros
+- **Hardhat** — Ambiente de desenvolvimento e testes para Ethereum
+- **Next.js (App Router)** — Framework React para o frontend
+- **Ethers.js** — Biblioteca para interagir com a Blockchain
+- **Tailwind CSS** — Estilização moderna e responsiva
 
 ---
 
@@ -23,7 +23,13 @@ git clone https://github.com/linikers/erc20TokenLab.git
 cd erc20TokenLab
 ```
 
-### 2. Configurar o Ambiente Hardhat
+### 2. Configurar variáveis de ambiente
+```bash
+cp .env.example .env
+```
+Edite o `.env` com suas chaves (veja a seção [Deploy na Sepolia](#-deploy-na-testnet-sepolia) para detalhes).
+
+### 3. Configurar o Ambiente Hardhat
 ```bash
 # Instalar dependências da raiz
 npm install
@@ -33,21 +39,17 @@ npx hardhat node
 ```
 *Mantenha este terminal aberto.*
 
-### 3. Fazer o Deploy do Contrato
+### 4. Fazer o Deploy do Contrato
 Em outro terminal:
 ```bash
 npx hardhat run scripts/deployTestToken.ts --network localhost
 ```
 *Anote o endereço do contrato exibido no console.*
 
-### 4. Configurar e Rodar o Frontend
+### 5. Configurar e Rodar o Frontend
 ```bash
 cd frontend
-
-# Instalar dependências do frontend
 npm install
-
-# Rodar em modo de desenvolvimento
 npm run dev
 ```
 Acesse: [http://localhost:3000](http://localhost:3000)
@@ -56,8 +58,7 @@ Acesse: [http://localhost:3000](http://localhost:3000)
 
 ## 🦊 Como Conectar a MetaMask
 
-Para interagir com o projeto localmente, siga estes passos:
-
+### Rede Local (Hardhat)
 1. Abra a extensão da MetaMask.
 2. Adicione uma nova rede manualmente:
    - **Nome**: Hardhat Local
@@ -68,26 +69,97 @@ Para interagir com o projeto localmente, siga estes passos:
    - Copie uma das **Private Keys** exibidas no terminal do `npx hardhat node`.
    - Na MetaMask, vá em "Importar Conta" e cole a chave.
 
+### Rede Sepolia (Testnet)
+1. Na MetaMask, ative redes de teste em **Configurações > Avançado**.
+2. Selecione a rede **Sepolia** no seletor de redes.
+3. Obtenha SepoliaETH de um faucet: [sepoliafaucet.com](https://sepoliafaucet.com)
+
 ---
 
-## ⛓️ Fluxo Web3 Simplificado
+## 🌐 Deploy na Testnet Sepolia
 
-1. **Provider**: O frontend se conecta ao provedor injetado pela MetaMask (`window.ethereum`).
-2. **ABI & Address**: O código usa a ABI (mapa das funções) e o endereço do contrato para criar uma instância local.
-3. **Signer**: Para transferências, o usuário assina a transação via MetaMask.
-4. **Blockchain**: A transação é enviada para a rede Hardhat, minerada, e o estado (saldos) é atualizado.
+### Pré-requisitos
+1. Uma conta no [Infura](https://infura.io) ou [Alchemy](https://alchemy.com) para obter um RPC URL.
+2. Uma carteira com SepoliaETH para pagar o gas do deploy.
+3. A Private Key desta carteira (⚠️ use uma carteira **exclusiva para desenvolvimento**).
+
+### Configuração
+
+Edite o arquivo `.env` na raiz do projeto:
+
+```env
+SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/SUA_CHAVE_AQUI
+PRIVATE_KEY=sua_private_key_de_64_caracteres_hex
+```
+
+> ⚠️ **Nunca commite o arquivo `.env`**. Ele já está protegido pelo `.gitignore`.
+
+### Executar o Deploy
+
+```bash
+npx hardhat run scripts/deployTestToken.ts --network sepolia
+```
+
+O console exibirá:
+```
+Deploying TestToken with the account: 0xSeuEndereço...
+TestToken deployed to: 0xEndereçoDoContrato...
+```
+
+Após o deploy, você pode verificar o contrato no [Sepolia Etherscan](https://sepolia.etherscan.io) buscando pelo endereço exibido.
+
+---
+
+## ⛓️ Como Funciona a Conexão com a Rede
+
+```
+┌─────────────┐     eth_requestAccounts     ┌───────────┐
+│   Frontend   │ ─────────────────────────▶ │  MetaMask  │
+│  (Next.js)   │ ◀───────────────────────── │ (Signer)   │
+└──────┬───────┘     endereço da wallet      └─────┬─────┘
+       │                                           │
+       │  balanceOf(address)                       │  assina TX
+       │  transfer(to, amount)                     │
+       ▼                                           ▼
+┌──────────────┐                           ┌──────────────┐
+│  Ethers.js   │ ── JSON-RPC ───────────▶  │   Rede ETH   │
+│  (Contract)  │ ◀──────────────────────── │  (Hardhat /   │
+└──────────────┘     resultado / receipt    │   Sepolia)   │
+                                           └──────────────┘
+```
+
+1. **Provider** — O frontend usa `window.ethereum` (injetado pela MetaMask) para criar um `BrowserProvider` do ethers.js.
+2. **ABI & Address** — O código combina a ABI (mapa das funções do contrato) com o endereço deployado para criar uma instância do contrato.
+3. **Leitura (view)** — Funções como `balanceOf` e `name` são gratuitas e não precisam de assinatura.
+4. **Escrita (state change)** — Funções como `transfer` exigem um `Signer`. O MetaMask abre um popup pedindo aprovação do usuário.
+5. **Confirmação** — Após a assinatura, a transação é enviada via JSON-RPC para a rede, minerada, e o frontend usa `tx.wait()` para aguardar a confirmação.
 
 ---
 
 ## 📂 Estrutura do Projeto
 
-- `/contracts`: Contratos inteligentes em Solidity.
-- `/scripts`: Scripts de deploy e automação.
-- `/test`: Testes unitários dos contratos.
-- `/frontend`: Aplicação Next.js completa.
-  - `/src/lib/contract.ts`: Lógica centralizada de comunicação Web3.
+```
+erc20TokenLab/
+├── contracts/           # Smart Contracts em Solidity
+│   ├── MyToken.sol
+│   └── TestToken.sol    # ERC20 com OpenZeppelin
+├── scripts/             # Scripts de deploy
+│   ├── deploy.ts
+│   └── deployTestToken.ts
+├── test/                # Testes unitários
+│   ├── MyToken.ts
+│   └── TestToken.ts
+├── frontend/            # Aplicação Next.js
+│   └── src/
+│       ├── app/page.tsx       # Interface principal
+│       ├── lib/contract.ts    # Lógica Web3 centralizada
+│       └── constants/index.ts # ABI e endereço do contrato
+├── hardhat.config.ts    # Config Hardhat (local + Sepolia)
+├── .env.example         # Template de variáveis de ambiente
+└── README.md
+```
 
 ---
 
 ### Desenvolvido por [Liniker](https://github.com/linikers)
-Desenvolvido como parte de um estudo avançado em tecnologias descentralizadas.
+Projeto construído como estudo prático em desenvolvimento de Smart Contracts e integração Web3 fullstack.
