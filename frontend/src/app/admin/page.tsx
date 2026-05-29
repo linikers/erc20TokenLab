@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import { useWeb3 } from "@/context/Web3Context";
 import { getContract } from "@/lib/contract";
 import { ethers } from "ethers";
 
 export default function AdminPage() {
+  const pathname = usePathname();
   const { account, isConnected, loading: web3Loading, error: web3Error, connect } = useWeb3();
 
   const [isOwner, setIsOwner] = useState<boolean | null>(null);
@@ -215,8 +217,24 @@ export default function AdminPage() {
       <div className="space-y-2">
         <h1 className="text-4xl font-bold">Admin Panel</h1>
         <p className="text-neutral-400">
-          Mint and burn tokens. Only the contract owner has access to these operations.
+          Gerencie tokens e vendas do curso.
         </p>
+      </div>
+
+      {/* Admin Sub-navigation */}
+      <div className="flex gap-2 border-b border-white/10 pb-4">
+        <a
+          href="/admin"
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${pathname === "/admin" ? "bg-white/10 text-white" : "text-neutral-400 hover:text-white hover:bg-white/5"}`}
+        >
+          🔥 Mint / Burn
+        </a>
+        <a
+          href="/admin/commerce"
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${pathname === "/admin/commerce" ? "bg-white/10 text-white" : "text-neutral-400 hover:text-white hover:bg-white/5"}`}
+        >
+          💰 Vendas
+        </a>
       </div>
 
       <div className="flex items-center justify-between p-4 bg-green-500/10 border border-green-500/20 rounded-xl">
