@@ -40,55 +40,22 @@ export async function POST(request: Request) {
 
     // ---- PAGBANK ----
     if (method === "pagbank") {
-      const clientId = process.env.PAGBANK_EMAIL;
-      const clientSecret = process.env.PAGBANK_TOKEN;
+      const apiEmail = process.env.PAGBANK_EMAIL;
+      const apiToken = process.env.PAGBANK_TOKEN;
       const isSandbox = process.env.PAGBANK_SANDBOX === "true";
       const baseApi = isSandbox ? "https://sandbox.api.pagseguro.com" : "https://api.pagseguro.com";
       const baseWs = isSandbox ? "https://ws.sandbox.pagseguro.uol.com.br" : "https://ws.pagseguro.uol.com.br";
-      console.log("[PagBank] Credentials defined:", !!clientId, !!clientSecret, "Sandbox:", isSandbox);
+      console.log("[PagBank] Credentials defined:", !!apiEmail, !!apiToken, "Sandbox:", isSandbox);
 
-      if (clientId && clientSecret && clientSecret !== "SEU_TOKEN_AQUI") {
+      if (apiEmail && apiToken && apiToken !== "SEU_TOKEN_AQUI") {
 
-        // ---- TENTATIVA 1: OAuth (API nova) ----
-        console.log("[PagBank] Tentando OAuth...");
-        const auth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
-
-        // Tenta JSON primeiro, depois form-urlencoded se falhar
-        let tokenRes = await fetch(`${baseApi}/oauth2/token`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            Authorization: `Basic ${auth}`,
-          },
-          body: "grant_type=client_credentials",
-        });
-
-        let tokenData;
-        try { tokenData = await tokenRes.json(); } catch { tokenData = null; }
-        console.log("[PagBank] OAuth status:", tokenRes.status);
-
-        // Se form-urlencoded falhou, tenta JSON (sandbox pode aceitar um formato diferente)
-        if (!tokenData?.access_token && tokenRes.status === 400) {
-          console.log("[PagBank] form-urlencoded falhou, tentando JSON...");
-          tokenRes = await fetch(`${baseApi}/oauth2/token`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Basic ${auth}`,
-            },
-            body: JSON.stringify({ grant_type: "client_credentials" }),
-          });
-          try { tokenData = await tokenRes.json(); } catch { tokenData = null; }
-          console.log("[PagBank] OAuth JSON status:", tokenRes.status);
-        }
-
-        if (tokenData?.access_token) {
-          console.log("[PagBank] OAuth funcionou! Criando pedido...");
+        // Helper to create order with a given access token
+        const createOrder = async (accessToken: string) => {
           const orderRes = await fetch(`${baseApi}/orders`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${tokenData.access_token}`,
+              Authorization: `Bearer ${accessToken}`,
             },
             body: JSON.stringify({
               reference_id: `curso_${Date.now()}`,
@@ -97,23 +64,68 @@ export async function POST(request: Request) {
               notification_urls: [`${baseUrl}/api/webhook`],
             }),
           });
-
           let order;
           try { order = await orderRes.json(); } catch { order = null; }
           console.log("[PagBank] Order status:", orderRes.status);
-
           if (order?.id) {
             const charge = order.charges?.[0];
             const checkoutUrl = charge?.payment_response?.redirect_url ||
               `https://pagseguro.uol.com.br/checkout/v2/payment/redirect.html?code=${order.id}`;
-            return NextResponse.json({ url: checkoutUrl, id: order.id, method: "pagbank_oauth" });
+            return { url: checkoutUrl, id: order.id };
           }
-          console.log("[PagBank] Order falhou:", JSON.stringify(order));
+          console.log("[PagBank] Order response:", JSON.stringify(order));
+          return null;
+        };
+
+        // ---- TENTATIVA 1: Token direto como Bearer (pode ser que o token do portal já seja o access_token) ----
+        console.log("[PagBank] Tentando token direto como Bearer...");
+        let result = await createOrder(apiToken);
+        if (result) {
+          return NextResponse.json({ ...result, method: "pagbank_bearer" });
         }
 
-        // ---- TENTATIVA 2: Checkout Transparente (API legada XML) ----
-        console.log("[PagBank] OAuth falhou, tentando Checkout Transparente XML...");
-        const xmlUrl = `${baseWs}/v2/checkout?email=${encodeURIComponent(clientId)}&token=${encodeURIComponent(clientSecret)}`;
+        // ---- TENTATIVA 2: OAuth client_credentials (Basic Auth + form-urlencoded) ----
+        console.log("[PagBank] Tentando OAuth form-urlencoded...");
+        const auth = Buffer.from(`${apiEmail}:${apiToken}`).toString("base64");
+        let tokenRes = await fetch(`${baseApi}/oauth2/token`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            Authorization: `Basic ${auth}`,
+          },
+          body: "grant_type=client_credentials",
+        });
+        let tokenData;
+        try { tokenData = await tokenRes.json(); } catch { tokenData = null; }
+        console.log("[PagBank] OAuth form status:", tokenRes.status, JSON.stringify(tokenData));
+
+        if (tokenData?.access_token) {
+          result = await createOrder(tokenData.access_token);
+          if (result) return NextResponse.json({ ...result, method: "pagbank_oauth" });
+        }
+
+        // ---- TENTATIVA 3: OAuth JSON (credenciais no body) ----
+        console.log("[PagBank] Tentando OAuth JSON...");
+        tokenRes = await fetch(`${baseApi}/oauth2/token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            grant_type: "client_credentials",
+            client_id: apiEmail,
+            client_secret: apiToken,
+          }),
+        });
+        try { tokenData = await tokenRes.json(); } catch { tokenData = null; }
+        console.log("[PagBank] OAuth JSON status:", tokenRes.status, JSON.stringify(tokenData));
+
+        if (tokenData?.access_token) {
+          result = await createOrder(tokenData.access_token);
+          if (result) return NextResponse.json({ ...result, method: "pagbank_oauth_json" });
+        }
+
+        // ---- TENTATIVA 4: Checkout Transparente XML ----
+        console.log("[PagBank] Tentando XML...");
+        const xmlUrl = `${baseWs}/v2/checkout?email=${encodeURIComponent(apiEmail)}&token=${encodeURIComponent(apiToken)}`;
         const xmlBody = `<?xml version="1.0" encoding="UTF-8"?>
 <checkout>
   <currency>BRL</currency>
@@ -130,16 +142,13 @@ export async function POST(request: Request) {
   <redirectURL>${baseUrl}/course</redirectURL>
   <notificationURL>${baseUrl}/api/webhook</notificationURL>
 </checkout>`;
-
         const xmlRes = await fetch(xmlUrl, {
           method: "POST",
           headers: { "Content-Type": "application/xml;charset=UTF-8" },
           body: xmlBody,
         });
-
         const xmlText = await xmlRes.text();
-        console.log("[PagBank] XML status:", xmlRes.status);
-
+        console.log("[PagBank] XML status:", xmlRes.status, xmlText.substring(0, 200));
         const codeMatch = xmlText.match(/<code>(.*?)<\/code>/);
         if (codeMatch?.[1]) {
           return NextResponse.json({
@@ -149,10 +158,10 @@ export async function POST(request: Request) {
           });
         }
 
-        // Se tudo falhar, loga e retorna erro
-        console.log("[PagBank] Ambas tentativas falharam. OAuth:", JSON.stringify(tokenData), "XML:", xmlText.substring(0, 300));
+        // Tudo falhou
+        console.log("[PagBank] TODAS as tentativas falharam");
         return NextResponse.json(
-          { error: "PagBank nao autorizou. Verifique suas credenciais em dev.pagbank.com.br" },
+          { error: "PagBank nao autorizou. Suas credenciais do dev.pagbank podem ser apenas para consulta, não para criar vendas. Precisa de credenciais de Checkout Transparente." },
           { status: 500 },
         );
       }
