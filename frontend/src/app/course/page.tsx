@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const MODULES = [
   {
@@ -1309,7 +1309,89 @@ await token.connect(alice).approve(dexAddress, ethers.parseUnits("100", 18));
 
 export default function CoursePage() {
   const [activeModule, setActiveModule] = useState<number | null>(null);
+  const [hasAccess, setHasAccess] = useState<boolean | null>(null);
+  const [checking, setChecking] = useState(true);
   const totalMinutes = MODULES.reduce((acc, m) => acc + m.minutes, 0);
+
+  // Check access on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const purchaseId = params.get("purchase_id");
+
+    // Check localStorage first
+    const storedAccess = localStorage.getItem("course_access");
+    if (storedAccess === "granted") {
+      setHasAccess(true);
+      setChecking(false);
+      return;
+    }
+
+    // Verify purchase_id via API
+    if (purchaseId) {
+      fetch(`/api/verify-access?purchase_id=${purchaseId}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.valid) {
+            localStorage.setItem("course_access", "granted");
+            // Remove purchase_id from URL
+            window.history.replaceState({}, "", "/course");
+            setHasAccess(true);
+          } else {
+            setHasAccess(false);
+          }
+        })
+        .catch(() => setHasAccess(false))
+        .finally(() => setChecking(false));
+    } else {
+      setHasAccess(false);
+      setChecking(false);
+    }
+  }, []);
+
+  // Not purchased — show buy prompt
+  if (!checking && !hasAccess) {
+    return (
+      <div className="max-w-2xl mx-auto text-center space-y-8 py-20">
+        <div className="inline-flex items-center justify-center w-24 h-24 bg-gradient-to-br from-emerald-600/20 to-blue-600/20 rounded-full">
+          <svg className="w-12 h-12 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+        </div>
+        <div className="space-y-4">
+          <h1 className="text-4xl font-bold">Curso Bloqueado 🔒</h1>
+          <p className="text-neutral-400 max-w-md mx-auto">
+            Você precisa adquirir o curso para acessar o conteúdo completo com 8 módulos.
+          </p>
+          <div className="flex items-center justify-center gap-3">
+            <span className="text-3xl font-extrabold text-white">R$ 19</span>
+            <span className="text-sm text-neutral-500 line-through">R$ 49</span>
+          </div>
+          <a
+            href="/#curso"
+            className="inline-block mt-4 px-10 py-4 bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 text-white font-bold rounded-xl transition-all shadow-lg"
+          >
+            Comprar Agora
+          </a>
+        </div>
+        <p className="text-xs text-neutral-600">
+          Já comprou?{" "}
+          <a href="/#curso" className="text-blue-400 underline">
+            Use o link do seu email de compra
+          </a>
+        </p>
+      </div>
+    );
+  }
+
+  // Checking access
+  if (checking) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-neutral-400 animate-pulse">Verificando acesso...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto">
