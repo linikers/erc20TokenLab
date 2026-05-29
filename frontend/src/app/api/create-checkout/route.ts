@@ -38,16 +38,16 @@ export async function POST(request: Request) {
 
     const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
 
-    // ---- PAGBANK (API OAuth) ----
+    // ---- PAGBANK ----
     if (method === "pagbank") {
       const clientId = process.env.PAGBANK_EMAIL;
       const clientSecret = process.env.PAGBANK_TOKEN;
-      console.log("[PagBank] Client ID defined:", !!clientId);
-      console.log("[PagBank] Client Secret defined:", !!clientSecret);
+      console.log("[PagBank] Credentials defined:", !!clientId, !!clientSecret);
 
       if (clientId && clientSecret && clientSecret !== "SEU_TOKEN_AQUI") {
-        // 1. Get OAuth token
-        console.log("[PagBank] Solicitando OAuth token...");
+
+        // ---- TENTATIVA 1: OAuth (API nova) ----
+        console.log("[PagBank] Tentando OAuth...");
         const auth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
         const tokenRes = await fetch("https://api.pagseguro.com/oauth2/token", {
@@ -56,94 +56,84 @@ export async function POST(request: Request) {
             "Content-Type": "application/json",
             Authorization: `Basic ${auth}`,
           },
-          body: JSON.stringify({
-            grant_type: "client_credentials",
-          }),
+          body: JSON.stringify({ grant_type: "client_credentials" }),
         });
 
-        console.log("[PagBank] OAuth status:", tokenRes.status);
         let tokenData;
-        try {
-          tokenData = await tokenRes.json();
-        } catch {
-          const text = await tokenRes.text();
-          console.log("[PagBank] OAuth raw response:", text);
-          return NextResponse.json(
-            { error: "Erro no PagBank OAuth (status " + tokenRes.status + "): " + text.substring(0, 200) },
-            { status: 500 },
-          );
-        }
-        console.log("[PagBank] OAuth response:", JSON.stringify(tokenData, null, 2));
+        try { tokenData = await tokenRes.json(); } catch { tokenData = null; }
+        console.log("[PagBank] OAuth status:", tokenRes.status);
 
-        const accessToken = tokenData.access_token;
-
-        if (!accessToken) {
-          console.log("[PagBank] ERRO: access_token nao recebido");
-          return NextResponse.json(
-            { error: "Erro no PagBank OAuth: " + JSON.stringify(tokenData) },
-            { status: 500 },
-          );
-        }
-
-        console.log("[PagBank] OAuth token obtido com sucesso");
-
-        // 2. Create order
-        console.log("[PagBank] Criando pedido...");
-        const orderPayload = {
-          reference_id: `curso_${Date.now()}`,
-          customer: { name: name || "Cliente", email },
-          items: [
-            {
-              reference_id: "curso-erc20",
-              name: "Curso: Do Zero ao seu Token ERC20",
-              quantity: 1,
-              unit_amount: 1900,
+        if (tokenData?.access_token) {
+          console.log("[PagBank] OAuth funcionou! Criando pedido...");
+          const orderRes = await fetch("https://api.pagseguro.com/orders", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${tokenData.access_token}`,
             },
-          ],
-          notification_urls: [`${baseUrl}/api/webhook`],
-        };
-        console.log("[PagBank] Order payload:", JSON.stringify(orderPayload, null, 2));
+            body: JSON.stringify({
+              reference_id: `curso_${Date.now()}`,
+              customer: { name: name || "Cliente", email },
+              items: [{ reference_id: "curso-erc20", name: "Curso: Do Zero ao seu Token ERC20", quantity: 1, unit_amount: 1900 }],
+              notification_urls: [`${baseUrl}/api/webhook`],
+            }),
+          });
 
-        const orderRes = await fetch("https://api.pagseguro.com/orders", {
+          let order;
+          try { order = await orderRes.json(); } catch { order = null; }
+          console.log("[PagBank] Order status:", orderRes.status);
+
+          if (order?.id) {
+            const charge = order.charges?.[0];
+            const checkoutUrl = charge?.payment_response?.redirect_url ||
+              `https://pagseguro.uol.com.br/checkout/v2/payment/redirect.html?code=${order.id}`;
+            return NextResponse.json({ url: checkoutUrl, id: order.id, method: "pagbank_oauth" });
+          }
+          console.log("[PagBank] Order falhou:", JSON.stringify(order));
+        }
+
+        // ---- TENTATIVA 2: Checkout Transparente (API legada XML) ----
+        console.log("[PagBank] OAuth falhou, tentando Checkout Transparente XML...");
+        const xmlUrl = `https://ws.pagseguro.uol.com.br/v2/checkout?email=${encodeURIComponent(clientId)}&token=${encodeURIComponent(clientSecret)}`;
+        const xmlBody = `<?xml version="1.0" encoding="UTF-8"?>
+<checkout>
+  <currency>BRL</currency>
+  <items>
+    <item>
+      <id>curso-erc20</id>
+      <description>Curso: Do Zero ao seu Token ERC20</description>
+      <amount>19.00</amount>
+      <quantity>1</quantity>
+    </item>
+  </items>
+  <reference>curso_${Date.now()}</reference>
+  <sender><email>${email}</email><name>${name || "Cliente"}</name></sender>
+  <redirectURL>${baseUrl}/course</redirectURL>
+  <notificationURL>${baseUrl}/api/webhook</notificationURL>
+</checkout>`;
+
+        const xmlRes = await fetch(xmlUrl, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify(orderPayload),
+          headers: { "Content-Type": "application/xml;charset=UTF-8" },
+          body: xmlBody,
         });
 
-        console.log("[PagBank] Order status:", orderRes.status);
-        let order;
-        try {
-          order = await orderRes.json();
-        } catch {
-          const text = await orderRes.text();
-          console.log("[PagBank] Order raw response:", text);
-          return NextResponse.json(
-            { error: "Erro no PagBank Order (status " + orderRes.status + "): " + text.substring(0, 200) },
-            { status: 500 },
-          );
-        }
-        console.log("[PagBank] Order response:", JSON.stringify(order, null, 2));
+        const xmlText = await xmlRes.text();
+        console.log("[PagBank] XML status:", xmlRes.status);
 
-        if (order.id) {
-          // Get the checkout URL from the charge's payment response
-          const charge = order.charges?.[0];
-          const checkoutUrl =
-            charge?.checkout_url ||
-            charge?.payment_response?.redirect_url ||
-            `https://pagseguro.uol.com.br/checkout/v2/payment/redirect.html?code=${order.id}`;
-
+        const codeMatch = xmlText.match(/<code>(.*?)<\/code>/);
+        if (codeMatch?.[1]) {
           return NextResponse.json({
-            url: checkoutUrl,
-            id: order.id,
-            method: "pagbank",
+            url: `https://pagseguro.uol.com.br/v2/checkout/payment.html?code=${codeMatch[1]}`,
+            id: codeMatch[1],
+            method: "pagbank_xml",
           });
         }
 
+        // Se tudo falhar, loga e retorna erro
+        console.log("[PagBank] Ambas tentativas falharam. OAuth:", JSON.stringify(tokenData), "XML:", xmlText.substring(0, 300));
         return NextResponse.json(
-          { error: "Erro no PagBank: " + JSON.stringify(order) },
+          { error: "PagBank nao autorizou. Verifique suas credenciais em dev.pagbank.com.br" },
           { status: 500 },
         );
       }
