@@ -6,30 +6,34 @@ Um laboratório completo para desenvolvimento, deploy e interação com Smart Co
 
 ## 🚀 Tecnologias Utilizadas
 
-- **Solidity** — Linguagem para os Smart Contracts
-- **OpenZeppelin** — Biblioteca padrão para contratos seguros
-- **Hardhat** — Ambiente de desenvolvimento e testes para Ethereum
-- **Next.js (App Router)** — Framework React para o frontend
-- **Ethers.js** — Biblioteca para interagir com a Blockchain
-- **Tailwind CSS** — Estilização moderna e responsiva
+- **Solidity**: Linguagem para os Smart Contracts.
+- **OpenZeppelin**: Biblioteca padrão para contratos seguros.
+- **Hardhat**: Ambiente de desenvolvimento e testes para Ethereum.
+- **Next.js (App Router)**: Framework React para o frontend.
+- **Ethers.js**: Biblioteca para interagir com a Blockchain.
+- **Tailwind CSS**: Estilização moderna e responsiva.
 
 ---
 
 ## 🛠️ Como Rodar Localmente
 
 ### 1. Clonar o repositório
+
 ```bash
 git clone https://github.com/linikers/erc20TokenLab.git
 cd erc20TokenLab
 ```
 
 ### 2. Configurar variáveis de ambiente
+
 ```bash
 cp .env.example .env
 ```
+
 Edite o `.env` com suas chaves (veja a seção [Deploy na Sepolia](#-deploy-na-testnet-sepolia) para detalhes).
 
 ### 3. Configurar o Ambiente Hardhat
+
 ```bash
 # Instalar dependências da raiz
 npm install
@@ -37,21 +41,27 @@ npm install
 # Subir o nó local do Hardhat
 npx hardhat node
 ```
-*Mantenha este terminal aberto.*
+
+_Mantenha este terminal aberto._
 
 ### 4. Fazer o Deploy do Contrato
+
 Em outro terminal:
+
 ```bash
 npx hardhat run scripts/deployTestToken.ts --network localhost
 ```
-*Anote o endereço do contrato exibido no console.*
+
+_Anote o endereço do contrato exibido no console._
 
 ### 5. Configurar e Rodar o Frontend
+
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
+
 Acesse: [http://localhost:3000](http://localhost:3000)
 
 ---
@@ -151,9 +161,12 @@ erc20TokenLab/
 │   └── TestToken.ts
 ├── frontend/            # Aplicação Next.js
 │   └── src/
-│       ├── app/page.tsx       # Interface principal
-│       ├── lib/contract.ts    # Lógica Web3 centralizada
-│       └── constants/index.ts # ABI e endereço do contrato
+│       ├── app/         # Páginas (Home, Dashboard, Transfer, Admin, Approve, etc.)
+│       ├── context/     # Web3Context global
+│       ├── hooks/       # Hooks customizados (transaction history)
+│       ├── components/  # Navbar e componentes compartilhados
+│       ├── lib/contract.ts # Lógica Web3 centralizada
+│       └── constants/   # ABI e endereço do contrato
 ├── hardhat.config.ts    # Config Hardhat (local + Sepolia)
 ├── .env.example         # Template de variáveis de ambiente
 └── README.md
@@ -162,4 +175,7 @@ erc20TokenLab/
 ---
 
 ### Desenvolvido por [Liniker](https://github.com/linikers)
+
 Projeto construído como estudo prático em desenvolvimento de Smart Contracts e integração Web3 fullstack.
+
+[linikerS Portfolio](https://linikers-portfolio.vercel.app/)
