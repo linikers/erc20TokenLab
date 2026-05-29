@@ -48,16 +48,16 @@ export async function POST(request: Request) {
       if (clientId && clientSecret && clientSecret !== "SEU_TOKEN_AQUI") {
         // 1. Get OAuth token
         console.log("[PagBank] Solicitando OAuth token...");
+        const auth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
         const tokenRes = await fetch("https://api.pagseguro.com/oauth2/token", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Basic ${auth}`,
           },
           body: JSON.stringify({
             grant_type: "client_credentials",
-            client_id: clientId,
-            client_secret: clientSecret,
           }),
         });
 
