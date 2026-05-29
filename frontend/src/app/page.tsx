@@ -5,6 +5,7 @@ import { useState } from "react";
 export default function Home() {
   const [checkoutEmail, setCheckoutEmail] = useState("");
   const [checkoutName, setCheckoutName] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"pagbank" | "bipa" | "demo">("pagbank");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
@@ -19,7 +20,7 @@ export default function Home() {
       const response = await fetch("/api/create-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: checkoutEmail, name: checkoutName }),
+        body: JSON.stringify({ email: checkoutEmail, name: checkoutName, method: paymentMethod }),
       });
 
       const data = await response.json();
@@ -189,6 +190,33 @@ export default function Home() {
                   className="w-full p-3 bg-neutral-900 border border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
                 />
               </div>
+
+              {/* Payment Method Selector */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("pagbank")}
+                  className={`p-3 rounded-xl text-sm font-bold transition-all border ${
+                    paymentMethod === "pagbank"
+                      ? "bg-emerald-600/20 border-emerald-500 text-emerald-400"
+                      : "bg-neutral-900 border-white/10 text-neutral-400 hover:border-neutral-500"
+                  }`}
+                >
+                  💳 Pix / Cartão
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("bipa")}
+                  className={`p-3 rounded-xl text-sm font-bold transition-all border ${
+                    paymentMethod === "bipa"
+                      ? "bg-orange-600/20 border-orange-500 text-orange-400"
+                      : "bg-neutral-900 border-white/10 text-neutral-400 hover:border-neutral-500"
+                  }`}
+                >
+                  ₿ Bitcoin (Bipa)
+                </button>
+              </div>
+
               <button
                 type="submit"
                 disabled={checkoutLoading || !checkoutEmail}
@@ -203,7 +231,9 @@ export default function Home() {
             )}
 
             <p className="text-xs text-neutral-500">
-              Pagamento processado pelo Mercado Pago • Pix, cartão ou boleto
+              {paymentMethod === "pagbank"
+                ? "Pagamento via PagBank • Pix, cartão de crédito ou boleto"
+                : "Pagamento via Bipa • Bitcoin Lightning Network • Conversão automática pra BRL"}
             </p>
           </div>
         </div>

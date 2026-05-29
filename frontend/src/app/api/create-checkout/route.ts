@@ -2,80 +2,145 @@ import { NextResponse } from "next/server";
 import { writeFileSync, existsSync, readFileSync } from "fs";
 import path from "path";
 
+const PURCHASES_PATH = path.join(process.cwd(), "src/data/purchases.json");
+
+function savePurchase(data: {
+  id: string;
+  email: string;
+  name: string;
+  amount: number;
+  method: string;
+}) {
+  const purchases = existsSync(PURCHASES_PATH)
+    ? JSON.parse(readFileSync(PURCHASES_PATH, "utf-8"))
+    : [];
+  purchases.push({
+    id: data.id,
+    email: data.email,
+    name: data.name || "",
+    product: "curso-erc20",
+    amount: data.amount,
+    currency: "BRL",
+    status: "approved",
+    payment_method: data.method,
+    created_at: new Date().toISOString(),
+  });
+  writeFileSync(PURCHASES_PATH, JSON.stringify(purchases, null, 2));
+}
+
 export async function POST(request: Request) {
   try {
-    const { email, name } = await request.json();
+    const { email, name, method = "pagbank" } = await request.json();
 
     if (!email) {
       return NextResponse.json({ error: "Email é obrigatório" }, { status: 400 });
     }
 
-    // Check if Mercado Pago credentials are configured
-    const accessToken = process.env.MP_ACCESS_TOKEN;
+    const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
 
-    if (accessToken && accessToken !== "TEST-...") {
-      // Real Mercado Pago integration
-      const preference = {
-        items: [
-          {
-            title: "Curso: Do Zero ao seu Token ERC20",
-            quantity: 1,
-            currency_id: "BRL",
-            unit_price: 19.0,
+    // ---- PAGBANK ----
+    if (method === "pagbank") {
+      const token = process.env.PAGBANK_TOKEN;
+      if (token && token !== "SEU_TOKEN_PAGBANK") {
+        const order = {
+          reference_id: `curso_${Date.now()}`,
+          customer: {
+            name: name || "Cliente",
+            email,
           },
-        ],
-        payer: { email, name: name || "" },
-        back_urls: {
-          success: `${process.env.NEXT_PUBLIC_URL || "http://localhost:3000"}/course?purchase_id=`,
-          failure: `${process.env.NEXT_PUBLIC_URL || "http://localhost:3000"}/?payment=failed`,
-        },
-        auto_return: "approved",
-        notification_url: `${process.env.NEXT_PUBLIC_URL || "http://localhost:3000"}/api/webhook`,
-        external_reference: email,
-      };
+          items: [
+            {
+              reference_id: "curso-erc20",
+              name: "Curso: Do Zero ao seu Token ERC20",
+              quantity: 1,
+              unit_amount: 1900, // R$ 19,00 em centavos
+            },
+          ],
+          notification_urls: [`${baseUrl}/api/webhook`],
+        };
 
-      const response = await fetch("https://api.mercadopago.com/checkout/preferences", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify(preference),
-      });
+        const response = await fetch("https://api.pagseguro.com/orders", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(order),
+        });
 
-      const data = await response.json();
-      
-      if (data.init_point) {
-        return NextResponse.json({ url: data.init_point, id: data.id });
+        const data = await response.json();
+
+        if (data.id) {
+          return NextResponse.json({
+            url: `https://pagseguro.uol.com.br/checkout/v2/payment/redirect.html?code=${data.id}`,
+            id: data.id,
+            method: "pagbank",
+          });
+        }
+
+        return NextResponse.json(
+          { error: "Erro no PagBank: " + JSON.stringify(data) },
+          { status: 500 },
+        );
       }
-      
-      return NextResponse.json({ error: "Erro ao criar pagamento" }, { status: 500 });
+
+      // PagBank sem token cai no demo
     }
 
-    // DEMO MODE - Simulate purchase for testing
-    const purchaseId = "demo_" + Date.now();
-    const purchasesPath = path.join(process.cwd(), "src/data/purchases.json");
-    const purchases = existsSync(purchasesPath)
-      ? JSON.parse(readFileSync(purchasesPath, "utf-8"))
-      : [];
+    // ---- BIPA ----
+    if (method === "bipa") {
+      const apiKey = process.env.BIPA_API_KEY;
+      if (apiKey && apiKey !== "SUA_CHAVE_BIPA") {
+        const invoice = {
+          amount: 19.0,
+          currency: "BRL",
+          description: "Curso: Do Zero ao seu Token ERC20",
+          callback_url: `${baseUrl}/api/webhook?method=bipa`,
+          external_id: email,
+        };
 
-    purchases.push({
+        const response = await fetch("https://api.bipa.app/v1/invoices", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey,
+          },
+          body: JSON.stringify(invoice),
+        });
+
+        const data = await response.json();
+
+        if (data.id || data.lightning_invoice) {
+          return NextResponse.json({
+            lightning_invoice: data.lightning_invoice,
+            id: data.id,
+            method: "bipa",
+          });
+        }
+
+        return NextResponse.json(
+          { error: "Erro na Bipa: " + JSON.stringify(data) },
+          { status: 500 },
+        );
+      }
+
+      // Bipa sem chave cai no demo
+    }
+
+    // ---- DEMO MODE ----
+    const purchaseId = `demo_${Date.now()}`;
+    savePurchase({
       id: purchaseId,
       email,
       name: name || "",
-      product: "curso-erc20",
       amount: 19.0,
-      currency: "BRL",
-      status: "approved",
-      payment_method: "demo",
-      created_at: new Date().toISOString(),
+      method: "demo",
     });
-
-    writeFileSync(purchasesPath, JSON.stringify(purchases, null, 2));
 
     return NextResponse.json({
       url: `/course?purchase_id=${purchaseId}`,
       id: purchaseId,
+      method: "demo",
       demo: true,
     });
   } catch (error) {

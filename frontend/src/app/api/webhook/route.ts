@@ -2,55 +2,59 @@ import { NextResponse } from "next/server";
 import { writeFileSync, existsSync, readFileSync } from "fs";
 import path from "path";
 
+const PURCHASES_PATH = path.join(process.cwd(), "src/data/purchases.json");
+
 export async function POST(request: Request) {
   try {
+    const url = new URL(request.url);
+    const method = url.searchParams.get("method") || "pagbank";
     const body = await request.json();
-    const { type, data } = body;
 
-    // Only process payment notifications
-    if (type !== "payment" && type !== "mercadopago") {
-      return NextResponse.json({ received: true });
+    let email = "";
+    let paymentId = "";
+    let amount = 19.0;
+
+    // ---- PAGBANK Webhook ----
+    if (method === "pagbank") {
+      // PagBank sends: { id, reference_id, status, charges: [...] }
+      const charge = body.charges?.[0];
+      if (charge?.status === "PAID" || charge?.status === "AUTHORIZED") {
+        email = body.customer?.email || charge?.email || "";
+        paymentId = body.id || charge?.id || "";
+        amount = (body.amount?.value || 1900) / 100;
+      }
     }
 
-    // Fetch payment details from Mercado Pago
-    const accessToken = process.env.MP_ACCESS_TOKEN;
-    if (!accessToken) {
-      return NextResponse.json({ error: "MP not configured" }, { status: 200 });
+    // ---- BIPA Webhook ----
+    if (method === "bipa") {
+      // Bipa sends: { id, status, external_id, amount }
+      if (body.status === "completed" || body.status === "paid") {
+        email = body.external_id || "";
+        paymentId = body.id || "";
+        amount = body.amount || 19.0;
+      }
     }
 
-    let paymentId = data?.id;
-    if (!paymentId && body?.action) {
-      paymentId = body.action.split("/").pop();
-    }
+    if (email && paymentId) {
+      const purchases = existsSync(PURCHASES_PATH)
+        ? JSON.parse(readFileSync(PURCHASES_PATH, "utf-8"))
+        : [];
 
-    if (paymentId) {
-      const response = await fetch(
-        `https://api.mercadopago.com/v1/payments/${paymentId}`,
-        {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        },
-      );
-      const payment = await response.json();
-
-      if (payment.status === "approved") {
-        const purchasesPath = path.join(process.cwd(), "src/data/purchases.json");
-        const purchases = existsSync(purchasesPath)
-          ? JSON.parse(readFileSync(purchasesPath, "utf-8"))
-          : [];
-
+      // Avoid duplicates
+      const exists = purchases.some((p: any) => p.id === paymentId);
+      if (!exists) {
         purchases.push({
-          id: payment.id.toString(),
-          email: payment.payer?.email || "",
-          name: payment.payer?.first_name || "",
+          id: paymentId,
+          email,
+          name: body.customer?.name || "",
           product: "curso-erc20",
-          amount: payment.transaction_amount,
+          amount,
           currency: "BRL",
           status: "approved",
-          payment_method: payment.payment_method_id,
-          created_at: payment.date_created,
+          payment_method: method,
+          created_at: new Date().toISOString(),
         });
-
-        writeFileSync(purchasesPath, JSON.stringify(purchases, null, 2));
+        writeFileSync(PURCHASES_PATH, JSON.stringify(purchases, null, 2));
       }
     }
 

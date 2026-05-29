@@ -39,7 +39,19 @@ export default function AdminPage() {
     setCheckingOwner(true);
     try {
       const contract = await getContract(false);
-      const owner = await contract.owner();
+
+      // Try to call owner() - may fail if contract is old version
+      let owner;
+      try {
+        owner = await contract.owner();
+      } catch {
+        // Contract doesn't have owner() - old deployment
+        setOwnerAddress(null);
+        setIsOwner(null);
+        setCheckingOwner(false);
+        return;
+      }
+
       setOwnerAddress(owner);
       setIsOwner(account.toLowerCase() === owner.toLowerCase());
     } catch (err: any) {
@@ -175,6 +187,8 @@ export default function AdminPage() {
     );
   }
 
+  const isOldContract = isOwner === null;
+
   // Not owner state
   if (!isOwner) {
     return (
@@ -185,27 +199,58 @@ export default function AdminPage() {
         </div>
 
         <div className="p-12 bg-white/5 border border-white/10 rounded-2xl text-center space-y-6">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-red-500/10 rounded-full mb-4">
-            <svg className="w-10 h-10 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <h2 className="text-2xl font-bold">Access Denied</h2>
-          <p className="text-neutral-400 max-w-md mx-auto">
-            Only the contract owner can access this page.
-          </p>
-          {ownerAddress && (
-            <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
-              <p className="text-xs text-yellow-400">
-                Contract owner: <code className="text-yellow-300">{ownerAddress}</code>
+          {isOldContract ? (
+            <>
+              <div className="inline-flex items-center justify-center w-20 h-20 bg-amber-500/10 rounded-full mb-4">
+                <svg className="w-10 h-10 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold text-amber-400">Contrato desatualizado</h2>
+              <p className="text-neutral-400 max-w-md mx-auto">
+                O contrato deployado não possui as funções de admin (mint/burn).
+                Você precisa redeployar o contrato com a nova versão.
               </p>
-            </div>
+              <div className="bg-black/40 rounded-xl p-4 text-left text-sm space-y-2">
+                <p className="text-neutral-400 font-mono text-xs">
+                  1. npx hardhat run scripts/deployTestToken.ts --network localhost
+                </p>
+                <p className="text-neutral-400 font-mono text-xs">
+                  2. Copiar o endereço do contrato
+                </p>
+                <p className="text-neutral-400 font-mono text-xs">
+                  3. Atualizar frontend/.env.local:
+                </p>
+                <p className="text-blue-400 font-mono text-xs">
+                  NEXT_PUBLIC_CONTRACT_ADDRESS=0x...novo_endereco
+                </p>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="inline-flex items-center justify-center w-20 h-20 bg-red-500/10 rounded-full mb-4">
+                <svg className="w-10 h-10 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold">Access Denied</h2>
+              <p className="text-neutral-400 max-w-md mx-auto">
+                Only the contract owner can access this page.
+              </p>
+              {ownerAddress && (
+                <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                  <p className="text-xs text-yellow-400">
+                    Contract owner: <code className="text-yellow-300">{ownerAddress}</code>
+                  </p>
+                </div>
+              )}
+              <div className="p-3 bg-neutral-800/50 rounded-lg">
+                <p className="text-xs text-neutral-500">
+                  Your address: <code className="text-neutral-400">{account}</code>
+                </p>
+              </div>
+            </>
           )}
-          <div className="p-3 bg-neutral-800/50 rounded-lg">
-            <p className="text-xs text-neutral-500">
-              Your address: <code className="text-neutral-400">{account}</code>
-            </p>
-          </div>
         </div>
       </div>
     );
