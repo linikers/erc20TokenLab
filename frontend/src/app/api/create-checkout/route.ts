@@ -40,8 +40,12 @@ export async function POST(request: Request) {
 
     // ---- PAGBANK ----
     if (method === "pagbank") {
+      const emailCred = process.env.PAGBANK_EMAIL;
       const token = process.env.PAGBANK_TOKEN;
-      if (token && token !== "SEU_TOKEN_PAGBANK") {
+      if (emailCred && token && token !== "SEU_TOKEN_PAGBANK") {
+        // Basic Auth: base64(email:token)
+        const auth = Buffer.from(`${emailCred}:${token}`).toString("base64");
+
         const order = {
           reference_id: `curso_${Date.now()}`,
           customer: {
@@ -63,7 +67,7 @@ export async function POST(request: Request) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
+            Authorization: `Basic ${auth}`,
           },
           body: JSON.stringify(order),
         });
@@ -84,7 +88,7 @@ export async function POST(request: Request) {
         );
       }
 
-      // PagBank sem token cai no demo
+      // PagBank sem credenciais cai no demo
     }
 
     // ---- BIPA ----
