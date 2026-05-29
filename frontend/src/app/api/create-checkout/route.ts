@@ -42,7 +42,10 @@ export async function POST(request: Request) {
     if (method === "pagbank") {
       const clientId = process.env.PAGBANK_EMAIL;
       const clientSecret = process.env.PAGBANK_TOKEN;
-      console.log("[PagBank] Credentials defined:", !!clientId, !!clientSecret);
+      const isSandbox = process.env.PAGBANK_SANDBOX === "true";
+      const baseApi = isSandbox ? "https://sandbox.api.pagseguro.com" : "https://api.pagseguro.com";
+      const baseWs = isSandbox ? "https://sandbox.ws.pagseguro.uol.com.br" : "https://ws.pagseguro.uol.com.br";
+      console.log("[PagBank] Credentials defined:", !!clientId, !!clientSecret, "Sandbox:", isSandbox);
 
       if (clientId && clientSecret && clientSecret !== "SEU_TOKEN_AQUI") {
 
@@ -50,7 +53,7 @@ export async function POST(request: Request) {
         console.log("[PagBank] Tentando OAuth...");
         const auth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
-        const tokenRes = await fetch("https://api.pagseguro.com/oauth2/token", {
+        const tokenRes = await fetch(`${baseApi}/oauth2/token`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -65,7 +68,7 @@ export async function POST(request: Request) {
 
         if (tokenData?.access_token) {
           console.log("[PagBank] OAuth funcionou! Criando pedido...");
-          const orderRes = await fetch("https://api.pagseguro.com/orders", {
+          const orderRes = await fetch(`${baseApi}/orders`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -94,7 +97,7 @@ export async function POST(request: Request) {
 
         // ---- TENTATIVA 2: Checkout Transparente (API legada XML) ----
         console.log("[PagBank] OAuth falhou, tentando Checkout Transparente XML...");
-        const xmlUrl = `https://ws.pagseguro.uol.com.br/v2/checkout?email=${encodeURIComponent(clientId)}&token=${encodeURIComponent(clientSecret)}`;
+        const xmlUrl = `${baseWs}/v2/checkout?email=${encodeURIComponent(clientId)}&token=${encodeURIComponent(clientSecret)}`;
         const xmlBody = `<?xml version="1.0" encoding="UTF-8"?>
 <checkout>
   <currency>BRL</currency>
