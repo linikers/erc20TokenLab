@@ -42,9 +42,14 @@ export async function POST(request: Request) {
     if (method === "pagbank") {
       const clientId = process.env.PAGBANK_EMAIL;
       const clientSecret = process.env.PAGBANK_TOKEN;
+      console.log("[PagBank] Client ID defined:", !!clientId);
+      console.log("[PagBank] Client Secret defined:", !!clientSecret);
+
       if (clientId && clientSecret && clientSecret !== "SEU_TOKEN_AQUI") {
         // 1. Get OAuth token
         const auth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+        console.log("[PagBank] Solicitando OAuth token...");
+
         const tokenRes = await fetch("https://api.pagseguro.com/oauth2/token", {
           method: "POST",
           headers: {
@@ -54,39 +59,51 @@ export async function POST(request: Request) {
           body: "grant_type=client_credentials",
         });
 
+        console.log("[PagBank] OAuth status:", tokenRes.status);
         const tokenData = await tokenRes.json();
+        console.log("[PagBank] OAuth response:", JSON.stringify(tokenData, null, 2));
+
         const accessToken = tokenData.access_token;
 
         if (!accessToken) {
+          console.log("[PagBank] ERRO: access_token nao recebido");
           return NextResponse.json(
             { error: "Erro no PagBank OAuth: " + JSON.stringify(tokenData) },
             { status: 500 },
           );
         }
 
+        console.log("[PagBank] OAuth token obtido com sucesso");
+
         // 2. Create order
+        console.log("[PagBank] Criando pedido...");
+        const orderPayload = {
+          reference_id: `curso_${Date.now()}`,
+          customer: { name: name || "Cliente", email },
+          items: [
+            {
+              reference_id: "curso-erc20",
+              name: "Curso: Do Zero ao seu Token ERC20",
+              quantity: 1,
+              unit_amount: 1900,
+            },
+          ],
+          notification_urls: [`${baseUrl}/api/webhook`],
+        };
+        console.log("[PagBank] Order payload:", JSON.stringify(orderPayload, null, 2));
+
         const orderRes = await fetch("https://api.pagseguro.com/orders", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${accessToken}`,
           },
-          body: JSON.stringify({
-            reference_id: `curso_${Date.now()}`,
-            customer: { name: name || "Cliente", email },
-            items: [
-              {
-                reference_id: "curso-erc20",
-                name: "Curso: Do Zero ao seu Token ERC20",
-                quantity: 1,
-                unit_amount: 1900,
-              },
-            ],
-            notification_urls: [`${baseUrl}/api/webhook`],
-          }),
+          body: JSON.stringify(orderPayload),
         });
 
+        console.log("[PagBank] Order status:", orderRes.status);
         const order = await orderRes.json();
+        console.log("[PagBank] Order response:", JSON.stringify(order, null, 2));
 
         if (order.id) {
           // Get the checkout URL from the charge's payment response
