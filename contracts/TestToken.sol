@@ -1,22 +1,26 @@
 // SPDX-License-Identifier: MIT
-// Define a licença do código (MIT é uma licença permissiva padrão)
-
 pragma solidity ^0.8.28;
-// Especifica a versão do compilador Solidity a ser usada
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-// Importa a implementação padrão do padrão ERC20 da OpenZeppelin
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract TestToken is ERC20 {
-    // Declara o contrato 'TestToken' que herda (is) as funcionalidades do contrato ERC20
-
-    constructor(uint256 initialSupply) ERC20("TestToken", "TTK") {
-        // O construtor é executado apenas uma vez durante o deploy
-        // ERC20("TestToken", "TTK") chama o construtor do contrato herdado, definindo o nome e o símbolo
-        
+/// @title TestToken
+/// @notice Token ERC20 com Mint (admin) e Burn (público + admin)
+contract TestToken is ERC20, ERC20Burnable, Ownable {
+    constructor(
+        uint256 initialSupply
+    ) ERC20("TestToken", "TTK") Ownable(msg.sender) {
         _mint(msg.sender, initialSupply * 10 ** decimals());
-        // Chama a função interna '_mint' para criar os tokens iniciais
-        // 'msg.sender' é o endereço que está realizando o deploy (deployer)
-        // 'initialSupply * 10 ** decimals()' ajusta o valor para considerar as 18 casas decimais padrão
+    }
+
+    /// @notice Cria novos tokens para um endereço (apenas owner)
+    function mint(address to, uint256 amount) external onlyOwner {
+        _mint(to, amount);
+    }
+
+    /// @notice Queima tokens de qualquer conta (apenas owner - função admin)
+    function adminBurn(address account, uint256 amount) external onlyOwner {
+        _burn(account, amount);
     }
 }

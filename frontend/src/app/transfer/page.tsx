@@ -1,45 +1,52 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { connectWallet, transferTokens } from "@/lib/contract";
+import { useWeb3 } from "@/context/Web3Context";
+import { useTransactionHistory } from "@/hooks/useTransactionHistory";
+import { transferTokens } from "@/lib/contract";
+import { EXPLORERS } from "@/constants";
 
 export default function TransferPage() {
-  const [account, setAccount] = useState<string | null>(null);
+  const { account, isConnected, chainId, connect, disconnect, loading: web3Loading } = useWeb3();
+  const { addTransaction } = useTransactionHistory();
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [transferring, setTransferring] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
 
-  const handleConnect = useCallback(async () => {
-    setError(null);
-    try {
-      const address = await connectWallet();
-      if (address) {
-        setAccount(address);
-      } else {
-        setError("Não foi possível conectar a carteira.");
-      }
-    } catch (err: any) {
-      setError(err.message || "Erro ao conectar.");
-    }
-  }, []);
+  const explorerBase = EXPLORERS[chainId];
+  const txUrl = txHash && explorerBase ? `${explorerBase}/tx/${txHash}` : null;
 
   const handleTransfer = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
       if (!account || !recipient || !amount) return;
 
-      setLoading(true);
+      setTransferring(true);
       setError(null);
+      setTxHash(null);
       setStatus("Iniciando transferência...");
 
       try {
         const tx = await transferTokens(recipient, amount);
         setStatus("Transação enviada! Aguardando confirmação...");
+        setTxHash(tx.hash);
 
         await tx.wait();
         setStatus("Transferência concluída com sucesso! 🎉");
+
+        addTransaction({
+          hash: tx.hash,
+          from: account,
+          to: recipient,
+          amount,
+          symbol: "TTK",
+          timestamp: Date.now(),
+          network: String(chainId),
+        });
+
         setAmount("");
         setRecipient("");
       } catch (err: any) {
@@ -47,10 +54,10 @@ export default function TransferPage() {
         setError(err.reason || err.message || "Erro ao transferir.");
         setStatus(null);
       } finally {
-        setLoading(false);
+        setTransferring(false);
       }
     },
-    [account, recipient, amount],
+    [account, recipient, amount, chainId, addTransaction],
   );
 
   return (
@@ -62,7 +69,7 @@ export default function TransferPage() {
         </p>
       </div>
 
-      {!account ? (
+      {!isConnected ? (
         <div className="p-12 bg-white/5 border border-white/10 rounded-2xl text-center space-y-6">
           <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-500/10 rounded-full mb-4">
             <svg
@@ -84,12 +91,12 @@ export default function TransferPage() {
             Conecte sua MetaMask para começar a transferir tokens.
           </p>
           <button
-            onClick={handleConnect}
-            className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-blue-500/20 active:scale-[0.98]"
+            onClick={connect}
+            disabled={web3Loading}
+            className="px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-neutral-700 disabled:text-neutral-500 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-blue-500/20 active:scale-[0.98]"
           >
-            Conectar MetaMask
+            {web3Loading ? "Conectando..." : "Conectar MetaMask"}
           </button>
-          {error && <p className="text-red-400 text-sm">{error}</p>}
         </div>
       ) : (
         <div className="p-8 bg-white/5 border border-white/10 rounded-2xl shadow-2xl space-y-6">
@@ -101,7 +108,7 @@ export default function TransferPage() {
               {account}
             </code>
             <button
-              onClick={() => setAccount(null)}
+              onClick={disconnect}
               className="text-xs text-neutral-500 hover:text-white transition-colors"
             >
               Desconectar
@@ -142,16 +149,32 @@ export default function TransferPage() {
 
             <button
               type="submit"
-              disabled={loading || !recipient || !amount}
+              disabled={transferring || !recipient || !amount}
               className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-500 hover:to-indigo-600 disabled:from-neutral-700 disabled:to-neutral-700 disabled:text-neutral-500 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg hover:shadow-blue-500/20 active:scale-[0.98] transition-all"
             >
-              {loading ? "Processando..." : "Confirmar Transferência"}
+              {transferring ? "Processando..." : "Confirmar Transferência"}
             </button>
           </form>
 
           {status && (
             <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg text-center">
               <p className="text-sm text-blue-400 animate-pulse">{status}</p>
+            </div>
+          )}
+
+          {txUrl && (
+            <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-lg text-center space-y-2">
+              <p className="text-xs text-neutral-400">
+                Hash da Transação:
+              </p>
+              <a
+                href={txUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block text-sm text-purple-400 hover:text-purple-300 underline underline-offset-2 break-all font-mono"
+              >
+                {txHash}
+              </a>
             </div>
           )}
 

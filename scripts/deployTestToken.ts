@@ -5,7 +5,13 @@ async function main() {
 
   console.log("Deploying TestToken with the account:", deployer.address);
 
-  const initialSupply = 1000000; // 1 milhão
+  // Use command-line argument for initial supply, default to 1,000,000
+  const initialSupplyArg = process.env.INITIAL_SUPPLY || process.argv[2] || "1000000";
+  const initialSupply = parseInt(initialSupplyArg, 10);
+  if (isNaN(initialSupply) || initialSupply <= 0) {
+    throw new Error("Invalid initial supply. Must be a positive integer.");
+  }
+  console.log("Initial supply:", initialSupply);
   const TestToken = await ethers.getContractFactory("TestToken");
   const token = await TestToken.deploy(initialSupply);
 

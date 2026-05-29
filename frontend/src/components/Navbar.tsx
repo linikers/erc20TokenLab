@@ -3,12 +3,15 @@
 import Link from "next/link";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
+import { useWeb3 } from "@/context/Web3Context";
 
 const navLinks = [
   { name: "Home", href: "/" },
   { name: "Dashboard", href: "/dashboard" },
   { name: "Token", href: "/token" },
   { name: "Transfer", href: "/transfer" },
+  { name: "Approve", href: "/approve" },
+  { name: "Admin", href: "/admin" },
   { name: "Como Usar", href: "/how-to-use" },
   { name: "Sobre", href: "/about" },
 ];
@@ -16,6 +19,11 @@ const navLinks = [
 export default function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const pathname = usePathname();
+  const { account, isConnected, networkName, connect, disconnect } = useWeb3();
+
+  const truncatedAddress = account
+    ? `${account.slice(0, 6)}...${account.slice(-4)}`
+    : "";
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-md border-b border-white/10">
@@ -45,6 +53,42 @@ export default function Navbar() {
               </div>
             </div>
           </div>
+
+          {/* Right side: network + wallet status */}
+          <div className="hidden md:flex items-center gap-4">
+            {/* Network indicator */}
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-white/10 rounded-full text-xs text-neutral-400">
+              <span className="w-1.5 h-1.5 bg-green-400 rounded-full"></span>
+              {networkName}
+            </div>
+
+            {/* Wallet status */}
+            {isConnected ? (
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-white/10 rounded-full">
+                  <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                  <span className="text-xs text-neutral-300 font-mono">
+                    {truncatedAddress}
+                  </span>
+                </div>
+                <button
+                  onClick={disconnect}
+                  className="text-xs text-neutral-500 hover:text-white transition-colors"
+                >
+                  Sair
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={connect}
+                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-full transition-all"
+              >
+                Conectar
+              </button>
+            )}
+          </div>
+
+          {/* Mobile menu button */}
           <div className="-mr-2 flex md:hidden">
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -95,7 +139,7 @@ export default function Navbar() {
       {/* Mobile menu */}
       <div
         className={`md:hidden transition-all duration-300 ease-in-out ${
-          isMenuOpen ? "max-h-96 opacity-100" : "max-h-0 opacity-0 overflow-hidden"
+          isMenuOpen ? "max-h-screen opacity-100" : "max-h-0 opacity-0 overflow-hidden"
         }`}
         id="mobile-menu"
       >
@@ -114,6 +158,30 @@ export default function Navbar() {
               {link.name}
             </Link>
           ))}
+          {/* Mobile wallet status */}
+          <div className="border-t border-white/10 pt-3 mt-3 px-3">
+            {isConnected ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                  <span className="text-xs text-neutral-400 font-mono">
+                    {truncatedAddress}
+                  </span>
+                </div>
+                <span className="text-xs text-neutral-500">{networkName}</span>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  connect();
+                  setIsMenuOpen(false);
+                }}
+                className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg transition-all"
+              >
+                Conectar MetaMask
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </nav>
