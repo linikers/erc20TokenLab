@@ -42,50 +42,64 @@ export async function POST(request: Request) {
     if (method === "pagbank") {
       const emailCred = process.env.PAGBANK_EMAIL;
       const token = process.env.PAGBANK_TOKEN;
-      if (emailCred && token && token !== "SEU_TOKEN_PAGBANK") {
-        // Basic Auth: base64(email:token)
-        const auth = Buffer.from(`${emailCred}:${token}`).toString("base64");
+      if (emailCred && token && token !== "SEU_TOKEN_AQUI") {
+        // PagBank Checkout Transparente - API via query params
+        const checkoutUrl = `https://ws.pagseguro.uol.com.br/v2/checkout?email=${encodeURIComponent(emailCred)}&token=${encodeURIComponent(token)}`;
 
-        const order = {
-          reference_id: `curso_${Date.now()}`,
-          customer: {
-            name: name || "Cliente",
-            email,
-          },
-          items: [
-            {
-              reference_id: "curso-erc20",
-              name: "Curso: Do Zero ao seu Token ERC20",
-              quantity: 1,
-              unit_amount: 1900, // R$ 19,00 em centavos
-            },
-          ],
-          notification_urls: [`${baseUrl}/api/webhook`],
-        };
+        const checkoutBody = `<?xml version="1.0" encoding="UTF-8"?>
+<checkout>
+  <currency>BRL</currency>
+  <items>
+    <item>
+      <id>curso-erc20</id>
+      <description>Curso: Do Zero ao seu Token ERC20</description>
+      <amount>19.00</amount>
+      <quantity>1</quantity>
+    </item>
+  </items>
+  <reference>curso_${Date.now()}</reference>
+  <sender>
+    <email>${email}</email>
+    <name>${name || "Cliente"}</name>
+  </sender>
+  <redirectURL>${baseUrl}/course</redirectURL>
+  <notificationURL>${baseUrl}/api/webhook</notificationURL>
+  <maxUses>1</maxUses>
+</checkout>`;
 
-        const response = await fetch("https://api.pagseguro.com/orders", {
+        const response = await fetch(checkoutUrl, {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
-            Authorization: `Basic ${auth}`,
+            "Content-Type": "application/xml;charset=UTF-8",
           },
-          body: JSON.stringify(order),
+          body: checkoutBody,
         });
 
-        const data = await response.json();
+        const text = await response.text();
 
-        if (data.id) {
+        // Parse the response XML for the checkout code
+        const codeMatch = text.match(/<code>(.*?)<\/code>/);
+        if (codeMatch && codeMatch[1]) {
           return NextResponse.json({
-            url: `https://pagseguro.uol.com.br/checkout/v2/payment/redirect.html?code=${data.id}`,
-            id: data.id,
+            url: `https://pagseguro.uol.com.br/v2/checkout/payment.html?code=${codeMatch[1]}`,
+            id: codeMatch[1],
             method: "pagbank",
           });
         }
 
-        return NextResponse.json(
-          { error: "Erro no PagBank: " + JSON.stringify(data) },
-          { status: 500 },
-        );
+        // Try JSON error parsing
+        try {
+          const json = JSON.parse(text);
+          return NextResponse.json(
+            { error: "Erro no PagBank: " + JSON.stringify(json) },
+            { status: 500 },
+          );
+        } catch {
+          return NextResponse.json(
+            { error: "Erro no PagBank: " + text.substring(0, 300) },
+            { status: 500 },
+          );
+        }
       }
 
       // PagBank sem credenciais cai no demo
