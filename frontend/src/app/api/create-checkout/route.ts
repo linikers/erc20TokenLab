@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       const clientSecret = process.env.PAGBANK_TOKEN;
       const isSandbox = process.env.PAGBANK_SANDBOX === "true";
       const baseApi = isSandbox ? "https://sandbox.api.pagseguro.com" : "https://api.pagseguro.com";
-      const baseWs = isSandbox ? "https://sandbox.ws.pagseguro.uol.com.br" : "https://ws.pagseguro.uol.com.br";
+      const baseWs = isSandbox ? "https://ws.sandbox.pagseguro.uol.com.br" : "https://ws.pagseguro.uol.com.br";
       console.log("[PagBank] Credentials defined:", !!clientId, !!clientSecret, "Sandbox:", isSandbox);
 
       if (clientId && clientSecret && clientSecret !== "SEU_TOKEN_AQUI") {
@@ -53,18 +53,34 @@ export async function POST(request: Request) {
         console.log("[PagBank] Tentando OAuth...");
         const auth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
-        const tokenRes = await fetch(`${baseApi}/oauth2/token`, {
+        // Tenta JSON primeiro, depois form-urlencoded se falhar
+        let tokenRes = await fetch(`${baseApi}/oauth2/token`, {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
             Authorization: `Basic ${auth}`,
           },
-          body: JSON.stringify({ grant_type: "client_credentials" }),
+          body: "grant_type=client_credentials",
         });
 
         let tokenData;
         try { tokenData = await tokenRes.json(); } catch { tokenData = null; }
         console.log("[PagBank] OAuth status:", tokenRes.status);
+
+        // Se form-urlencoded falhou, tenta JSON (sandbox pode aceitar um formato diferente)
+        if (!tokenData?.access_token && tokenRes.status === 400) {
+          console.log("[PagBank] form-urlencoded falhou, tentando JSON...");
+          tokenRes = await fetch(`${baseApi}/oauth2/token`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Basic ${auth}`,
+            },
+            body: JSON.stringify({ grant_type: "client_credentials" }),
+          });
+          try { tokenData = await tokenRes.json(); } catch { tokenData = null; }
+          console.log("[PagBank] OAuth JSON status:", tokenRes.status);
+        }
 
         if (tokenData?.access_token) {
           console.log("[PagBank] OAuth funcionou! Criando pedido...");
