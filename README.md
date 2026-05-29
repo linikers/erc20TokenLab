@@ -18,12 +18,14 @@ Um laboratório completo para desenvolvimento, deploy e interação com Smart Co
 ## 🛠️ Como Rodar Localmente
 
 ### 1. Clonar o repositório
+
 ```bash
 git clone https://github.com/linikers/erc20TokenLab.git
 cd erc20TokenLab
 ```
 
 ### 2. Configurar o Ambiente Hardhat
+
 ```bash
 # Instalar dependências da raiz
 npm install
@@ -31,16 +33,21 @@ npm install
 # Subir o nó local do Hardhat
 npx hardhat node
 ```
-*Mantenha este terminal aberto.*
+
+_Mantenha este terminal aberto._
 
 ### 3. Fazer o Deploy do Contrato
+
 Em outro terminal:
+
 ```bash
 npx hardhat run scripts/deployTestToken.ts --network localhost
 ```
-*Anote o endereço do contrato exibido no console.*
+
+_Anote o endereço do contrato exibido no console._
 
 ### 4. Configurar e Rodar o Frontend
+
 ```bash
 cd frontend
 
@@ -50,6 +57,7 @@ npm install
 # Rodar em modo de desenvolvimento
 npm run dev
 ```
+
 Acesse: [http://localhost:3000](http://localhost:3000)
 
 ---
@@ -90,4 +98,8 @@ Para interagir com o projeto localmente, siga estes passos:
 ---
 
 ### Desenvolvido por [Liniker](https://github.com/linikers)
+
 Desenvolvido como parte de um estudo avançado em tecnologias descentralizadas.
+
+verificar scan co contrato na rede testnet
+https://sepolia.etherscan.io/

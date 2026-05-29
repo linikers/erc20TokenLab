@@ -66,3 +66,29 @@ export const connectWallet = async (): Promise<string | null> => {
   }
   return null;
 };
+
+/**
+ * Busca as informações principais do token (nome, símbolo, supply)
+ */
+export const getTokenInfo = async () => {
+  try {
+    const contract = await getContract();
+    const [name, symbol, decimals, totalSupply] = await Promise.all([
+      contract.name(),
+      contract.symbol(),
+      contract.decimals(),
+      contract.totalSupply(),
+    ]);
+
+    return {
+      name,
+      symbol,
+      decimals: Number(decimals),
+      totalSupply: ethers.formatUnits(totalSupply, decimals),
+      address: CONTRACT_ADDRESS,
+    };
+  } catch (error) {
+    console.error("Erro ao buscar informações do token:", error);
+    return null;
+  }
+};
