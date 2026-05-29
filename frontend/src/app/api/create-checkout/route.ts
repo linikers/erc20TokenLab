@@ -47,20 +47,32 @@ export async function POST(request: Request) {
 
       if (clientId && clientSecret && clientSecret !== "SEU_TOKEN_AQUI") {
         // 1. Get OAuth token
-        const auth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
         console.log("[PagBank] Solicitando OAuth token...");
 
         const tokenRes = await fetch("https://api.pagseguro.com/oauth2/token", {
           method: "POST",
           headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            Authorization: `Basic ${auth}`,
+            "Content-Type": "application/json",
           },
-          body: "grant_type=client_credentials",
+          body: JSON.stringify({
+            grant_type: "client_credentials",
+            client_id: clientId,
+            client_secret: clientSecret,
+          }),
         });
 
         console.log("[PagBank] OAuth status:", tokenRes.status);
-        const tokenData = await tokenRes.json();
+        let tokenData;
+        try {
+          tokenData = await tokenRes.json();
+        } catch {
+          const text = await tokenRes.text();
+          console.log("[PagBank] OAuth raw response:", text);
+          return NextResponse.json(
+            { error: "Erro no PagBank OAuth (status " + tokenRes.status + "): " + text.substring(0, 200) },
+            { status: 500 },
+          );
+        }
         console.log("[PagBank] OAuth response:", JSON.stringify(tokenData, null, 2));
 
         const accessToken = tokenData.access_token;
@@ -102,7 +114,17 @@ export async function POST(request: Request) {
         });
 
         console.log("[PagBank] Order status:", orderRes.status);
-        const order = await orderRes.json();
+        let order;
+        try {
+          order = await orderRes.json();
+        } catch {
+          const text = await orderRes.text();
+          console.log("[PagBank] Order raw response:", text);
+          return NextResponse.json(
+            { error: "Erro no PagBank Order (status " + orderRes.status + "): " + text.substring(0, 200) },
+            { status: 500 },
+          );
+        }
         console.log("[PagBank] Order response:", JSON.stringify(order, null, 2));
 
         if (order.id) {
