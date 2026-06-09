@@ -1,8 +1,47 @@
 import { NextResponse } from "next/server";
 import { writeFileSync, existsSync, readFileSync } from "fs";
 import path from "path";
+import crypto from "crypto";
 
 const PURCHASES_PATH = path.join(process.cwd(), "src/data/purchases.json");
+
+// Pix key
+const PIX_KEY = "152967c9-02bb-48da-8f05-4a894eb3ad72";
+const PIX_MERCHANT = "CURSO ERC20";
+const PIX_CITY = "SAO PAULO";
+
+function crc16(payload: string): string {
+  const poly = 0x1021;
+  let reg = 0xffff;
+  for (let i = 0; i < payload.length; i++) {
+    let byte = payload.charCodeAt(i);
+    reg ^= byte << 8;
+    for (let j = 0; j < 8; j++) {
+      if (reg & 0x8000) reg = (reg << 1) ^ poly;
+      else reg <<= 1;
+      reg &= 0xffff;
+    }
+  }
+  return reg.toString(16).toUpperCase().padStart(4, "0");
+}
+
+function addField(id: number, value: string): string {
+  const size = String(value.length).padStart(2, "0");
+  return `${String(id).padStart(2, "0")}${size}${value}`;
+}
+
+function generatePixPayload(amount: number, txid: string): string {
+  const gui = addField(0, "BR.GOV.BCB.PIX");
+  const key = addField(1, PIX_KEY);
+  const merchant = addField(4, PIX_MERCHANT.slice(0, 25));
+  const city = addField(5, PIX_CITY.slice(0, 15));
+  const value = addField(6, amount.toFixed(2));
+  const txidField = addField(62, txid.slice(0, 25));
+  const merchantAccount = `${gui}${key}`;
+  const mai = addField(26, merchantAccount);
+  const withoutCRC = `000201${mai}${merchant}${value}${city}${txidField}6304`;
+  return `${withoutCRC}${crc16(withoutCRC)}`;
+}
 
 function savePurchase(data: {
   id: string;
@@ -207,6 +246,42 @@ export async function POST(request: Request) {
       }
 
       // Bipa sem chave cai no demo
+    }
+
+    // ---- PIX ----
+    if (method === "pix") {
+      const purchaseId = `pix_${Date.now()}`;
+      const pixPayload = generatePixPayload(19.0, purchaseId);
+      const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
+
+      // Save as pending
+      const purchases = existsSync(PURCHASES_PATH)
+        ? JSON.parse(readFileSync(PURCHASES_PATH, "utf-8"))
+        : [];
+      purchases.push({
+        id: purchaseId,
+        email,
+        name: name || "",
+        product: "curso-erc20",
+        amount: 19.0,
+        currency: "BRL",
+        status: "pending",
+        payment_method: "pix",
+        pix_key: PIX_KEY,
+        created_at: new Date().toISOString(),
+      });
+      writeFileSync(PURCHASES_PATH, JSON.stringify(purchases, null, 2));
+
+      return NextResponse.json({
+        id: purchaseId,
+        method: "pix",
+        pix_key: PIX_KEY,
+        pix_payload: pixPayload,
+        pix_amount: 19.0,
+        pix_copy: pixPayload,
+        status: "pending",
+        instructions: "Pague o PIX acima e envie o comprovante. Após confirmacao, voce recebera acesso ao curso.",
+      });
     }
 
     // ---- DEMO MODE ----

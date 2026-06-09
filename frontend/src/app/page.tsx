@@ -5,9 +5,10 @@ import { useState } from "react";
 export default function Home() {
   const [checkoutEmail, setCheckoutEmail] = useState("");
   const [checkoutName, setCheckoutName] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"pagbank" | "bipa" | "demo">("pagbank");
+  const [paymentMethod, setPaymentMethod] = useState<"pagbank" | "bipa" | "pix" | "demo">("pagbank");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [pixData, setPixData] = useState<{ pix_key: string; pix_payload: string; pix_amount: number; pix_copy: string; id: string } | null>(null);
 
   const handleBuy = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,6 +28,8 @@ export default function Home() {
 
       if (data.url) {
         window.location.href = data.url;
+      } else if (data.method === "pix") {
+        setPixData(data);
       } else {
         setCheckoutError(data.error || "Erro ao criar pagamento.");
       }
@@ -192,28 +195,39 @@ export default function Home() {
               </div>
 
               {/* Payment Method Selector */}
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
-                  onClick={() => setPaymentMethod("pagbank")}
+                  onClick={() => { setPaymentMethod("pix"); setPixData(null); }}
+                  className={`p-3 rounded-xl text-sm font-bold transition-all border ${
+                    paymentMethod === "pix"
+                      ? "bg-green-600/20 border-green-500 text-green-400"
+                      : "bg-neutral-900 border-white/10 text-neutral-400 hover:border-neutral-500"
+                  }`}
+                >
+                  📱 Pix
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setPaymentMethod("pagbank"); setPixData(null); }}
                   className={`p-3 rounded-xl text-sm font-bold transition-all border ${
                     paymentMethod === "pagbank"
                       ? "bg-emerald-600/20 border-emerald-500 text-emerald-400"
                       : "bg-neutral-900 border-white/10 text-neutral-400 hover:border-neutral-500"
                   }`}
                 >
-                  💳 Pix / Cartão
+                  💳 Cartão
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPaymentMethod("bipa")}
+                  onClick={() => { setPaymentMethod("bipa"); setPixData(null); }}
                   className={`p-3 rounded-xl text-sm font-bold transition-all border ${
                     paymentMethod === "bipa"
                       ? "bg-orange-600/20 border-orange-500 text-orange-400"
                       : "bg-neutral-900 border-white/10 text-neutral-400 hover:border-neutral-500"
                   }`}
                 >
-                  ₿ Bitcoin (Bipa)
+                  ₿ Bitcoin
                 </button>
               </div>
 
@@ -226,14 +240,47 @@ export default function Home() {
               </button>
             </form>
 
+            {pixData && (
+              <div className="p-4 bg-green-950/30 border border-green-500/30 rounded-xl text-sm space-y-3">
+                <p className="text-green-400 font-bold">📱 Pix gerado!</p>
+                <p className="text-neutral-300">Pague R$ {pixData.pix_amount.toFixed(2)} via Pix usando o QR Code ou copie o código abaixo:</p>
+                <div className="flex justify-center">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pixData.pix_payload)}`}
+                    alt="QR Code Pix"
+                    className="bg-white p-2 rounded-lg"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={pixData.pix_payload}
+                    className="flex-1 p-2 bg-neutral-900 border border-white/10 rounded-lg text-xs font-mono text-green-300"
+                  />
+                  <button
+                    onClick={() => navigator.clipboard.writeText(pixData.pix_payload)}
+                    className="px-3 py-2 bg-green-700 hover:bg-green-600 text-white text-xs font-bold rounded-lg transition-all"
+                  >
+                    Copiar
+                  </button>
+                </div>
+                <p className="text-xs text-neutral-500">
+                  Após pagar, envie o comprovante para confirmar e receber acesso ao curso.
+                </p>
+              </div>
+            )}
+
             {checkoutError && (
               <p className="text-red-400 text-sm">{checkoutError}</p>
             )}
 
             <p className="text-xs text-neutral-500">
-              {paymentMethod === "pagbank"
+              {paymentMethod === "pix"
+                ? "Pagamento via Pix • Chave aleatoria • Confirmacao manual"
+                : paymentMethod === "pagbank"
                 ? "Pagamento via PagBank • Pix, cartão de crédito ou boleto"
-                : "Pagamento via Bipa • Bitcoin Lightning Network • Conversão automática pra BRL"}
+                : "Pagamento via Bipa • Bitcoin Lightning • Conversão automática pra BRL"}
             </p>
           </div>
         </div>
