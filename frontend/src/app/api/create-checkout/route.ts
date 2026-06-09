@@ -252,25 +252,28 @@ export async function POST(request: Request) {
     if (method === "pix") {
       const purchaseId = `pix_${Date.now()}`;
       const pixPayload = generatePixPayload(19.0, purchaseId);
-      const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
 
-      // Save as pending
-      const purchases = existsSync(PURCHASES_PATH)
-        ? JSON.parse(readFileSync(PURCHASES_PATH, "utf-8"))
-        : [];
-      purchases.push({
-        id: purchaseId,
-        email,
-        name: name || "",
-        product: "curso-erc20",
-        amount: 19.0,
-        currency: "BRL",
-        status: "pending",
-        payment_method: "pix",
-        pix_key: PIX_KEY,
-        created_at: new Date().toISOString(),
-      });
-      writeFileSync(PURCHASES_PATH, JSON.stringify(purchases, null, 2));
+      // Tenta salvar localmente, mas nao trava se falhar (Vercel = read-only fs)
+      try {
+        const purchases = existsSync(PURCHASES_PATH)
+          ? JSON.parse(readFileSync(PURCHASES_PATH, "utf-8"))
+          : [];
+        purchases.push({
+          id: purchaseId,
+          email,
+          name: name || "",
+          product: "curso-erc20",
+          amount: 19.0,
+          currency: "BRL",
+          status: "pending",
+          payment_method: "pix",
+          pix_key: PIX_KEY,
+          created_at: new Date().toISOString(),
+        });
+        writeFileSync(PURCHASES_PATH, JSON.stringify(purchases, null, 2));
+      } catch (e) {
+        console.warn("[Pix] Nao foi possivel salvar purchase localmente (Vercel?):", e);
+      }
 
       return NextResponse.json({
         id: purchaseId,
