@@ -5,7 +5,7 @@ import { useState } from "react";
 export default function Home() {
   const [checkoutEmail, setCheckoutEmail] = useState("");
   const [checkoutName, setCheckoutName] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"pagbank" | "bipa" | "pix" | "demo">("pagbank");
+  const [paymentMethod, setPaymentMethod] = useState<"pagbank" | "bipa" | "pix" | "demo">("pix");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [pixData, setPixData] = useState<{ pix_key: string; pix_payload: string; pix_amount: number; pix_copy: string; id: string } | null>(null);
