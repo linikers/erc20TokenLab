@@ -9,6 +9,7 @@ export default function Home() {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [pixData, setPixData] = useState<{ pix_key: string; pix_payload: string; pix_amount: number; pix_copy: string; id: string } | null>(null);
+  const [btcData, setBtcData] = useState<{ btc_address: string; lightning_invoice: string; bip21_uri: string; btc_amount_brl: number; id: string; instructions: string } | null>(null);
 
   const handleBuy = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,6 +31,10 @@ export default function Home() {
         window.location.href = data.url;
       } else if (data.method === "pix") {
         setPixData(data);
+        setBtcData(null);
+      } else if (data.method === "bipa") {
+        setBtcData(data);
+        setPixData(null);
       } else {
         setCheckoutError(data.error || "Erro ao criar pagamento.");
       }
@@ -198,7 +203,7 @@ export default function Home() {
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
-                  onClick={() => { setPaymentMethod("pix"); setPixData(null); }}
+                  onClick={() => { setPaymentMethod("pix"); setPixData(null); setBtcData(null); }}
                   className={`p-3 rounded-xl text-sm font-bold transition-all border ${
                     paymentMethod === "pix"
                       ? "bg-green-600/20 border-green-500 text-green-400"
@@ -209,7 +214,7 @@ export default function Home() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setPaymentMethod("pagbank"); setPixData(null); }}
+                  onClick={() => { setPaymentMethod("pagbank"); setPixData(null); setBtcData(null); }}
                   className={`p-3 rounded-xl text-sm font-bold transition-all border ${
                     paymentMethod === "pagbank"
                       ? "bg-emerald-600/20 border-emerald-500 text-emerald-400"
@@ -220,7 +225,7 @@ export default function Home() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setPaymentMethod("bipa"); setPixData(null); }}
+                  onClick={() => { setPaymentMethod("bipa"); setPixData(null); setBtcData(null); }}
                   className={`p-3 rounded-xl text-sm font-bold transition-all border ${
                     paymentMethod === "bipa"
                       ? "bg-orange-600/20 border-orange-500 text-orange-400"
@@ -271,6 +276,53 @@ export default function Home() {
               </div>
             )}
 
+            {btcData && (
+              <div className="p-4 bg-orange-950/30 border border-orange-500/30 rounded-xl text-sm space-y-3">
+                <p className="text-orange-400 font-bold">₿ Bitcoin / Lightning</p>
+                <p className="text-neutral-300">Pague R$ 19,00 equivalente em BTC via Lightning (recomendado) ou Bitcoin on-chain:</p>
+
+                <div className="space-y-2">
+                  <p className="text-xs text-neutral-500 font-bold uppercase">Lightning (mais rápido)</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={btcData.lightning_invoice}
+                      className="flex-1 p-2 bg-neutral-900 border border-white/10 rounded-lg text-xs font-mono text-orange-300 truncate"
+                    />
+                    <button
+                      onClick={() => navigator.clipboard.writeText(btcData.lightning_invoice)}
+                      className="px-3 py-2 bg-orange-700 hover:bg-orange-600 text-white text-xs font-bold rounded-lg transition-all flex-shrink-0"
+                    >
+                      Copiar
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs text-neutral-500 font-bold uppercase">Bitcoin On-chain</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={btcData.btc_address}
+                      className="flex-1 p-2 bg-neutral-900 border border-white/10 rounded-lg text-xs font-mono text-orange-300 truncate"
+                    />
+                    <button
+                      onClick={() => navigator.clipboard.writeText(btcData.btc_address)}
+                      className="px-3 py-2 bg-orange-700 hover:bg-orange-600 text-white text-xs font-bold rounded-lg transition-all flex-shrink-0"
+                    >
+                      Copiar
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-xs text-neutral-500">
+                  {btcData.instructions}
+                </p>
+              </div>
+            )}
+
             {checkoutError && (
               <p className="text-red-400 text-sm">{checkoutError}</p>
             )}
@@ -280,7 +332,7 @@ export default function Home() {
                 ? "Pagamento via Pix • Chave aleatoria • Confirmacao manual"
                 : paymentMethod === "pagbank"
                 ? "Pagamento via PagBank • Pix, cartão de crédito ou boleto"
-                : "Pagamento via Bipa • Bitcoin Lightning • Conversão automática pra BRL"}
+                : "Pagamento via Bitcoin • Lightning (rápido) ou on-chain • Confirmação manual"}
             </p>
           </div>
         </div>

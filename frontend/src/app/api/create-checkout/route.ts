@@ -6,7 +6,7 @@ import crypto from "crypto";
 const PURCHASES_PATH = path.join(process.cwd(), "src/data/purchases.json");
 
 // Pix key
-const PIX_KEY = "152967c9-02bb-48da-8f05-4a894eb3ad72";
+const PIX_KEY = "010d0101-9109-4cd1-bf05-cad25bebd1d2";
 const PIX_MERCHANT = "CURSO ERC20";
 const PIX_CITY = "SAO PAULO";
 
@@ -246,6 +246,25 @@ export async function POST(request: Request) {
       }
 
       // Bipa sem chave cai no demo
+    }
+
+    // ---- BITCOIN / LIGHTNING (estático) ----
+    if (method === "bipa") {
+      const purchaseId = `btc_${Date.now()}`;
+      const btcAddress = "bc1q0em9vfr2x3t9765cchdfr04s2ztcy6lkk435z0";
+      const lightningInvoice = "lnbc1p4yh2aepp5ua82h6cqnavh5l2wtv96ueq43dqlhr5lcd7dyl25mszhp9gy8juqdqqcqzzsxqrrsssp50y2xzsfr20mqpqnzutltaxum3y6y4pmwwlm47ye2uc0fngcmjpxs9qxpqysgqy936llmgsvga2xgqnhfg4e99e5aqzcrdqrw9xyf6er5027mv9zcqvmttwprgskn0r6n6kt6xjeujtj5cjyl2me28lazugew0r7rhmcgqc99snq";
+      const bip21Uri = `bitcoin:${btcAddress}?amount=0&lightning=${lightningInvoice}`;
+
+      return NextResponse.json({
+        id: purchaseId,
+        method: "bipa",
+        btc_address: btcAddress,
+        lightning_invoice: lightningInvoice,
+        bip21_uri: bip21Uri,
+        btc_amount_brl: 19.0,
+        status: "pending",
+        instructions: "Pague via Lightning (rápido, taxa baixa) ou Bitcoin on-chain. Envie o comprovante para confirmar.",
+      });
     }
 
     // ---- PIX ----
