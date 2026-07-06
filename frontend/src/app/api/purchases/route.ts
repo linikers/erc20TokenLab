@@ -2,31 +2,48 @@ import { NextResponse } from "next/server";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 
-export async function GET() {
-  const purchasesPath = path.join(process.cwd(), "src/data/purchases.json");
-  if (!existsSync(purchasesPath)) {
-    return NextResponse.json({ purchases: [], total: 0, revenue: 0 });
+const PURCHASES_PATH = path.join(process.cwd(), "src/data/purchases.json");
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const adminPassword = searchParams.get("password");
+
+  const purchases = existsSync(PURCHASES_PATH)
+    ? JSON.parse(readFileSync(PURCHASES_PATH, "utf-8"))
+    : [];
+
+  const adminPass = process.env.ADMIN_PASSWORD;
+
+  // Admin view: return all purchases
+  if (adminPassword && adminPass && adminPassword === adminPass) {
+    const total = purchases.filter((p: any) => p.status === "approved").length;
+    const revenue = purchases
+      .filter((p: any) => p.status === "approved")
+      .reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
+    return NextResponse.json({ purchases, total, revenue });
   }
 
-  const purchases = JSON.parse(readFileSync(purchasesPath, "utf-8"));
+  // Public view: only approved
   const approved = purchases.filter((p: any) => p.status === "approved");
   const total = approved.length;
   const revenue = approved.reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
-
   return NextResponse.json({ purchases: approved, total, revenue });
 }
 
-// Allow admin to manually add a purchase
+// Manual add (admin only)
 export async function POST(request: Request) {
   try {
-    const { email, name } = await request.json();
+    const { email, name, password } = await request.json();
+    const adminPass = process.env.ADMIN_PASSWORD;
+    if (!adminPass || password !== adminPass) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     if (!email) {
       return NextResponse.json({ error: "Email é obrigatório" }, { status: 400 });
     }
 
-    const purchasesPath = path.join(process.cwd(), "src/data/purchases.json");
-    const purchases = existsSync(purchasesPath)
-      ? JSON.parse(readFileSync(purchasesPath, "utf-8"))
+    const purchases = existsSync(PURCHASES_PATH)
+      ? JSON.parse(readFileSync(PURCHASES_PATH, "utf-8"))
       : [];
 
     const purchase = {
@@ -42,7 +59,7 @@ export async function POST(request: Request) {
     };
 
     purchases.push(purchase);
-    writeFileSync(purchasesPath, JSON.stringify(purchases, null, 2));
+    writeFileSync(PURCHASES_PATH, JSON.stringify(purchases, null, 2));
 
     return NextResponse.json({ success: true, purchase });
   } catch (error) {

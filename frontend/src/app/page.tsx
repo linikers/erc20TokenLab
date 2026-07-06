@@ -271,7 +271,7 @@ export default function Home() {
                   </button>
                 </div>
                 <p className="text-xs text-neutral-500">
-                  Após pagar, envie o comprovante para confirmar e receber acesso ao curso.
+                  Após pagar, o acesso será liberado em breve.
                 </p>
               </div>
             )}
@@ -318,7 +318,7 @@ export default function Home() {
                 </div>
 
                 <p className="text-xs text-neutral-500">
-                  {btcData.instructions}
+                  Após pagar, o acesso será liberado em breve.
                 </p>
               </div>
             )}
@@ -329,10 +329,10 @@ export default function Home() {
 
             <p className="text-xs text-neutral-500">
               {paymentMethod === "pix"
-                ? "Pagamento via Pix • Chave aleatoria • Confirmacao manual"
+                ? "Pagamento via Pix • Chave aleatoria"
                 : paymentMethod === "pagbank"
                 ? "Pagamento via PagBank • Pix, cartão de crédito ou boleto"
-                : "Pagamento via Bitcoin • Lightning (rápido) ou on-chain • Confirmação manual"}
+                : "Pagamento via Bitcoin • Lightning (rápido) ou on-chain"}
             </p>
           </div>
         </div>

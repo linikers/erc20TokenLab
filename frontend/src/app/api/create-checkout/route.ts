@@ -255,6 +255,28 @@ export async function POST(request: Request) {
       const lightningInvoice = "lnbc1p4yh2aepp5ua82h6cqnavh5l2wtv96ueq43dqlhr5lcd7dyl25mszhp9gy8juqdqqcqzzsxqrrsssp50y2xzsfr20mqpqnzutltaxum3y6y4pmwwlm47ye2uc0fngcmjpxs9qxpqysgqy936llmgsvga2xgqnhfg4e99e5aqzcrdqrw9xyf6er5027mv9zcqvmttwprgskn0r6n6kt6xjeujtj5cjyl2me28lazugew0r7rhmcgqc99snq";
       const bip21Uri = `bitcoin:${btcAddress}?amount=0&lightning=${lightningInvoice}`;
 
+      // Tenta salvar localmente
+      try {
+        const purchases = existsSync(PURCHASES_PATH)
+          ? JSON.parse(readFileSync(PURCHASES_PATH, "utf-8"))
+          : [];
+        purchases.push({
+          id: purchaseId,
+          email,
+          name: name || "",
+          product: "curso-erc20",
+          amount: 19.0,
+          currency: "BRL",
+          status: "pending",
+          payment_method: "btc",
+          btc_address: btcAddress,
+          created_at: new Date().toISOString(),
+        });
+        writeFileSync(PURCHASES_PATH, JSON.stringify(purchases, null, 2));
+      } catch (e) {
+        console.warn("[BTC] Nao foi possivel salvar:", e);
+      }
+
       return NextResponse.json({
         id: purchaseId,
         method: "bipa",
@@ -263,7 +285,7 @@ export async function POST(request: Request) {
         bip21_uri: bip21Uri,
         btc_amount_brl: 19.0,
         status: "pending",
-        instructions: "Pague via Lightning (rápido, taxa baixa) ou Bitcoin on-chain. Envie o comprovante para confirmar.",
+        instructions: "Pague via Lightning (rápido) ou on-chain. Acesso sera liberado em breve.",
       });
     }
 
@@ -302,7 +324,7 @@ export async function POST(request: Request) {
         pix_amount: 19.0,
         pix_copy: pixPayload,
         status: "pending",
-        instructions: "Pague o PIX acima e envie o comprovante. Após confirmacao, voce recebera acesso ao curso.",
+        instructions: "Pague o PIX acima e em breve o acesso sera liberado.",
       });
     }
 
