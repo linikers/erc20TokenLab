@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function Home() {
   const [checkoutEmail, setCheckoutEmail] = useState("");
@@ -10,6 +10,19 @@ export default function Home() {
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [pixData, setPixData] = useState<{ pix_key: string; pix_payload: string; pix_amount: number; pix_copy: string; id: string } | null>(null);
   const [btcData, setBtcData] = useState<{ btc_address: string; lightning_invoice: string; bip21_uri: string; btc_amount_brl: number; id: string; instructions: string } | null>(null);
+  const [referrer, setReferrer] = useState("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref");
+    if (ref) {
+      setReferrer(ref);
+      localStorage.setItem("ecr20_ref", ref);
+    } else {
+      const saved = localStorage.getItem("ecr20_ref");
+      if (saved) setReferrer(saved);
+    }
+  }, []);
 
   const handleBuy = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,7 +35,7 @@ export default function Home() {
       const response = await fetch("/api/create-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: checkoutEmail, name: checkoutName, method: paymentMethod }),
+        body: JSON.stringify({ email: checkoutEmail, name: checkoutName, method: paymentMethod, ref: referrer }),
       });
 
       const data = await response.json();
@@ -177,6 +190,12 @@ export default function Home() {
                 Pagamento único • Acesso vitalício
               </p>
             </div>
+
+            {referrer && (
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-sm text-center">
+                <span className="text-emerald-400">🎓 Indicado por <strong>{referrer}</strong> — R$ 19 preço único!</span>
+              </div>
+            )}
 
             <form onSubmit={handleBuy} className="space-y-3">
               <div>

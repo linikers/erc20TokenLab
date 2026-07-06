@@ -11,6 +11,7 @@ interface Purchase {
   currency: string;
   status: string;
   payment_method: string;
+  referred_by?: string;
   created_at: string;
 }
 
@@ -132,6 +133,11 @@ export default function AdminCommercePage() {
 
   const pendingPurchases = data?.purchases?.filter((p) => p.status === "pending") || [];
   const approvedPurchases = data?.purchases?.filter((p) => p.status === "approved") || [];
+  const referrers = new Map<string, number>();
+  approvedPurchases.forEach((p) => {
+    if (p.referred_by) referrers.set(p.referred_by, (referrers.get(p.referred_by) || 0) + 1);
+  });
+  const topReferrer = [...referrers.entries()].sort((a, b) => b[1] - a[1]);
 
   // Login screen
   if (!loggedIn) {
@@ -200,6 +206,21 @@ export default function AdminCommercePage() {
         </div>
       </div>
 
+      {/* Afiliados */}
+      {topReferrer.length > 0 && (
+        <div className="p-6 bg-white/5 border border-emerald-500/20 rounded-2xl">
+          <h2 className="text-lg font-bold text-emerald-400 mb-3">🏆 Afiliados</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {topReferrer.map(([ref, count]) => (
+              <div key={ref} className="p-3 bg-neutral-900 rounded-xl text-center">
+                <p className="text-sm font-bold text-white truncate">{ref}</p>
+                <p className="text-xs text-emerald-400">{count} venda{count > 1 ? "s" : ""}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Liberar Acesso Manual */}
         <div className="lg:col-span-1">
@@ -249,7 +270,8 @@ export default function AdminCommercePage() {
                       <th className="text-left pb-3 pr-4">Data</th>
                       <th className="text-left pb-3 pr-4">Nome</th>
                       <th className="text-left pb-3 pr-4">Email</th>
-                      <th className="text-left pb-3 pr-4">Método</th>
+                      <th className="text-left pb-3 pr-4">Pagamento</th>
+                      <th className="text-left pb-3 pr-4">Indicado por</th>
                       <th className="text-right pb-3">Ação</th>
                     </tr>
                   </thead>
@@ -265,6 +287,9 @@ export default function AdminCommercePage() {
                           <span className="px-2 py-0.5 text-xs rounded-full border bg-amber-500/10 text-amber-400 border-amber-500/20">
                             {p.payment_method}
                           </span>
+                        </td>
+                        <td className="py-3 pr-4 text-xs text-neutral-500">
+                          {p.referred_by ? p.referred_by : "—"}
                         </td>
                         <td className="py-3 text-right">
                           <button
@@ -305,6 +330,7 @@ export default function AdminCommercePage() {
                       <th className="text-left pb-3 pr-4">Nome</th>
                       <th className="text-left pb-3 pr-4">Email</th>
                       <th className="text-left pb-3 pr-4">Pagamento</th>
+                      <th className="text-left pb-3 pr-4">Indicado por</th>
                       <th className="text-right pb-3">Valor</th>
                     </tr>
                   </thead>
@@ -320,6 +346,9 @@ export default function AdminCommercePage() {
                           <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 text-xs rounded-full border border-emerald-500/20">
                             {p.payment_method === "demo" ? "Demo" : p.payment_method === "manual" ? "Manual" : p.payment_method}
                           </span>
+                        </td>
+                        <td className="py-3 pr-4 text-xs text-neutral-500">
+                          {p.referred_by ? p.referred_by : "—"}
                         </td>
                         <td className="py-3 text-right text-white font-medium">
                           R$ {p.amount.toFixed(2).replace(".", ",")}

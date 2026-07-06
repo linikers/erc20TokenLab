@@ -49,6 +49,7 @@ function savePurchase(data: {
   name: string;
   amount: number;
   method: string;
+  ref?: string;
 }) {
   const purchases = existsSync(PURCHASES_PATH)
     ? JSON.parse(readFileSync(PURCHASES_PATH, "utf-8"))
@@ -62,6 +63,7 @@ function savePurchase(data: {
     currency: "BRL",
     status: "approved",
     payment_method: data.method,
+    referred_by: data.ref || "",
     created_at: new Date().toISOString(),
   });
   writeFileSync(PURCHASES_PATH, JSON.stringify(purchases, null, 2));
@@ -69,7 +71,7 @@ function savePurchase(data: {
 
 export async function POST(request: Request) {
   try {
-    const { email, name, method = "pagbank" } = await request.json();
+    const { email, name, method = "pagbank", ref } = await request.json();
 
     if (!email) {
       return NextResponse.json({ error: "Email é obrigatório" }, { status: 400 });
@@ -270,6 +272,7 @@ export async function POST(request: Request) {
           status: "pending",
           payment_method: "btc",
           btc_address: btcAddress,
+          referred_by: ref || "",
           created_at: new Date().toISOString(),
         });
         writeFileSync(PURCHASES_PATH, JSON.stringify(purchases, null, 2));
@@ -309,6 +312,7 @@ export async function POST(request: Request) {
           status: "pending",
           payment_method: "pix",
           pix_key: PIX_KEY,
+          referred_by: ref || "",
           created_at: new Date().toISOString(),
         });
         writeFileSync(PURCHASES_PATH, JSON.stringify(purchases, null, 2));
@@ -336,6 +340,7 @@ export async function POST(request: Request) {
       name: name || "",
       amount: 19.0,
       method: "demo",
+      ref,
     });
 
     return NextResponse.json({
