@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { writeFileSync, existsSync, readFileSync } from "fs";
 import path from "path";
-import crypto from "crypto";
+import { PRECO_CENTAVOS, PRODUTO } from "@/lib/produto";
 
 const PURCHASES_PATH = path.join(process.cwd(), "src/data/purchases.json");
 
@@ -10,11 +10,13 @@ const PIX_KEY = "010d0101-9109-4cd1-bf05-cad25bebd1d2";
 const PIX_MERCHANT = "CURSO ERC20";
 const PIX_CITY = "SAO PAULO";
 
+const PRECO = PRECO_CENTAVOS / 100;
+
 function crc16(payload: string): string {
   const poly = 0x1021;
   let reg = 0xffff;
   for (let i = 0; i < payload.length; i++) {
-    let byte = payload.charCodeAt(i);
+    const byte = payload.charCodeAt(i);
     reg ^= byte << 8;
     for (let j = 0; j < 8; j++) {
       if (reg & 0x8000) reg = (reg << 1) ^ poly;
@@ -69,9 +71,16 @@ function savePurchase(data: {
   writeFileSync(PURCHASES_PATH, JSON.stringify(purchases, null, 2));
 }
 
+/**
+ * Checkout dos meios locais: Pix manual (chave estatica), Bitcoin/Lightning e demo.
+ *
+ * A cobranca no PagBank nao mora mais aqui: ela e feita em /api/pagbank/checkout
+ * (API de Pedidos, com QR real e liberacao automatica). Este arquivo segue como
+ * fallback quando o PagBank nao esta configurado.
+ */
 export async function POST(request: Request) {
   try {
-    const { email, name, method = "pagbank", ref } = await request.json();
+    const { email, name, method = "pix", ref } = await request.json();
 
     if (!email) {
       return NextResponse.json({ error: "Email é obrigatório" }, { status: 400 });
@@ -79,145 +88,15 @@ export async function POST(request: Request) {
 
     const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
 
-    // ---- PAGBANK ----
-    if (method === "pagbank") {
-      const apiEmail = process.env.PAGBANK_EMAIL;
-      const apiToken = process.env.PAGBANK_TOKEN;
-      const isSandbox = process.env.PAGBANK_SANDBOX === "true";
-      const baseApi = isSandbox ? "https://sandbox.api.pagseguro.com" : "https://api.pagseguro.com";
-      const baseWs = isSandbox ? "https://ws.sandbox.pagseguro.uol.com.br" : "https://ws.pagseguro.uol.com.br";
-      console.log("[PagBank] Credentials defined:", !!apiEmail, !!apiToken, "Sandbox:", isSandbox);
-
-      if (apiEmail && apiToken && apiToken !== "SEU_TOKEN_AQUI") {
-
-        // Helper to create order with a given access token
-        const createOrder = async (accessToken: string) => {
-          const orderRes = await fetch(`${baseApi}/orders`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${accessToken}`,
-            },
-            body: JSON.stringify({
-              reference_id: `curso_${Date.now()}`,
-              customer: { name: name || "Cliente", email },
-              items: [{ reference_id: "curso-erc20", name: "Curso: Do Zero ao seu Token ERC20", quantity: 1, unit_amount: 1900 }],
-              notification_urls: [`${baseUrl}/api/webhook`],
-            }),
-          });
-          let order;
-          try { order = await orderRes.json(); } catch { order = null; }
-          console.log("[PagBank] Order status:", orderRes.status);
-          if (order?.id) {
-            const charge = order.charges?.[0];
-            const checkoutUrl = charge?.payment_response?.redirect_url ||
-              `https://pagseguro.uol.com.br/checkout/v2/payment/redirect.html?code=${order.id}`;
-            return { url: checkoutUrl, id: order.id };
-          }
-          console.log("[PagBank] Order response:", JSON.stringify(order));
-          return null;
-        };
-
-        // ---- TENTATIVA 1: Token direto como Bearer (pode ser que o token do portal já seja o access_token) ----
-        console.log("[PagBank] Tentando token direto como Bearer...");
-        let result = await createOrder(apiToken);
-        if (result) {
-          return NextResponse.json({ ...result, method: "pagbank_bearer" });
-        }
-
-        // ---- TENTATIVA 2: OAuth client_credentials (Basic Auth + form-urlencoded) ----
-        console.log("[PagBank] Tentando OAuth form-urlencoded...");
-        const auth = Buffer.from(`${apiEmail}:${apiToken}`).toString("base64");
-        let tokenRes = await fetch(`${baseApi}/oauth2/token`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            Authorization: `Basic ${auth}`,
-          },
-          body: "grant_type=client_credentials",
-        });
-        let tokenData;
-        try { tokenData = await tokenRes.json(); } catch { tokenData = null; }
-        console.log("[PagBank] OAuth form status:", tokenRes.status, JSON.stringify(tokenData));
-
-        if (tokenData?.access_token) {
-          result = await createOrder(tokenData.access_token);
-          if (result) return NextResponse.json({ ...result, method: "pagbank_oauth" });
-        }
-
-        // ---- TENTATIVA 3: OAuth JSON (credenciais no body) ----
-        console.log("[PagBank] Tentando OAuth JSON...");
-        tokenRes = await fetch(`${baseApi}/oauth2/token`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            grant_type: "client_credentials",
-            client_id: apiEmail,
-            client_secret: apiToken,
-          }),
-        });
-        try { tokenData = await tokenRes.json(); } catch { tokenData = null; }
-        console.log("[PagBank] OAuth JSON status:", tokenRes.status, JSON.stringify(tokenData));
-
-        if (tokenData?.access_token) {
-          result = await createOrder(tokenData.access_token);
-          if (result) return NextResponse.json({ ...result, method: "pagbank_oauth_json" });
-        }
-
-        // ---- TENTATIVA 4: Checkout Transparente XML ----
-        console.log("[PagBank] Tentando XML...");
-        const xmlUrl = `${baseWs}/v2/checkout?email=${encodeURIComponent(apiEmail)}&token=${encodeURIComponent(apiToken)}`;
-        const xmlBody = `<?xml version="1.0" encoding="UTF-8"?>
-<checkout>
-  <currency>BRL</currency>
-  <items>
-    <item>
-      <id>curso-erc20</id>
-      <description>Curso: Do Zero ao seu Token ERC20</description>
-      <amount>19.00</amount>
-      <quantity>1</quantity>
-    </item>
-  </items>
-  <reference>curso_${Date.now()}</reference>
-  <sender><email>${email}</email><name>${name || "Cliente"}</name></sender>
-  <redirectURL>${baseUrl}/course</redirectURL>
-  <notificationURL>${baseUrl}/api/webhook</notificationURL>
-</checkout>`;
-        const xmlRes = await fetch(xmlUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/xml;charset=UTF-8" },
-          body: xmlBody,
-        });
-        const xmlText = await xmlRes.text();
-        console.log("[PagBank] XML status:", xmlRes.status, xmlText.substring(0, 200));
-        const codeMatch = xmlText.match(/<code>(.*?)<\/code>/);
-        if (codeMatch?.[1]) {
-          return NextResponse.json({
-            url: `https://pagseguro.uol.com.br/v2/checkout/payment.html?code=${codeMatch[1]}`,
-            id: codeMatch[1],
-            method: "pagbank_xml",
-          });
-        }
-
-        // Tudo falhou
-        console.log("[PagBank] TODAS as tentativas falharam");
-        return NextResponse.json(
-          { error: "PagBank nao autorizou. Suas credenciais do dev.pagbank podem ser apenas para consulta, não para criar vendas. Precisa de credenciais de Checkout Transparente." },
-          { status: 500 },
-        );
-      }
-
-      // PagBank sem credenciais cai no demo
-    }
 
     // ---- BIPA ----
     if (method === "bipa") {
       const apiKey = process.env.BIPA_API_KEY;
       if (apiKey && apiKey !== "SUA_CHAVE_BIPA") {
         const invoice = {
-          amount: 19.0,
+          amount: PRECO,
           currency: "BRL",
-          description: "Curso: Do Zero ao seu Token ERC20",
+          description: PRODUTO,
           callback_url: `${baseUrl}/api/webhook?method=bipa`,
           external_id: email,
         };
@@ -267,7 +146,7 @@ export async function POST(request: Request) {
           email,
           name: name || "",
           product: "curso-erc20",
-          amount: 19.0,
+          amount: PRECO,
           currency: "BRL",
           status: "pending",
           payment_method: "btc",
@@ -286,7 +165,7 @@ export async function POST(request: Request) {
         btc_address: btcAddress,
         lightning_invoice: lightningInvoice,
         bip21_uri: bip21Uri,
-        btc_amount_brl: 19.0,
+        btc_amount_brl: PRECO,
         status: "pending",
         instructions: "Pague via Lightning (rápido) ou on-chain. Acesso sera liberado em breve.",
       });
@@ -295,7 +174,7 @@ export async function POST(request: Request) {
     // ---- PIX ----
     if (method === "pix") {
       const purchaseId = `pix_${Date.now()}`;
-      const pixPayload = generatePixPayload(19.0, purchaseId);
+      const pixPayload = generatePixPayload(PRECO, purchaseId);
 
       // Tenta salvar localmente, mas nao trava se falhar (Vercel = read-only fs)
       try {
@@ -307,7 +186,7 @@ export async function POST(request: Request) {
           email,
           name: name || "",
           product: "curso-erc20",
-          amount: 19.0,
+          amount: PRECO,
           currency: "BRL",
           status: "pending",
           payment_method: "pix",
@@ -325,7 +204,7 @@ export async function POST(request: Request) {
         method: "pix",
         pix_key: PIX_KEY,
         pix_payload: pixPayload,
-        pix_amount: 19.0,
+        pix_amount: PRECO,
         pix_copy: pixPayload,
         status: "pending",
         instructions: "Pague o PIX acima e em breve o acesso sera liberado.",
@@ -338,7 +217,7 @@ export async function POST(request: Request) {
       id: purchaseId,
       email,
       name: name || "",
-      amount: 19.0,
+      amount: PRECO,
       method: "demo",
       ref,
     });
