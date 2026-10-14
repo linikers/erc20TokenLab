@@ -1317,6 +1317,7 @@ export default function CoursePage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const purchaseId = params.get("purchase_id");
+    const orderId = params.get("order");
 
     // Check localStorage first
     const storedAccess = localStorage.getItem("course_access");
@@ -1326,14 +1327,20 @@ export default function CoursePage() {
       return;
     }
 
-    // Verify purchase_id via API
-    if (purchaseId) {
-      fetch(`/api/verify-access?purchase_id=${purchaseId}`)
+    // Confere no servidor: `order` = cobrança do PagBank (já paga?) ou
+    // `purchase_id` = compra aprovada pelo admin.
+    const consulta = orderId
+      ? `/api/verify-access?order=${encodeURIComponent(orderId)}`
+      : purchaseId
+        ? `/api/verify-access?purchase_id=${encodeURIComponent(purchaseId)}`
+        : null;
+
+    if (consulta) {
+      fetch(consulta)
         .then((r) => r.json())
         .then((data) => {
           if (data.valid) {
             localStorage.setItem("course_access", "granted");
-            // Remove purchase_id from URL
             window.history.replaceState({}, "", "/course");
             setHasAccess(true);
           } else {

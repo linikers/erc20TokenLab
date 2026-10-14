@@ -2,15 +2,37 @@
 
 import { useState, useEffect } from "react";
 
+type PixState = {
+  /** id da compra (PIX manual) ou do pedido no PagBank (ORDE_...) */
+  id: string;
+  pix_amount: number;
+  /** copia-e-cola do PIX */
+  pix_copy: string;
+  pix_key?: string;
+  /** PagBank: id do pedido — usado para consultar o status */
+  order_id?: string;
+  /** PagBank: PNG/BASE64 do QR */
+  qr_png?: string;
+  /** true = cobrança PagBank (libera sozinha); false = PIX manual (admin libera) */
+  pagbank: boolean;
+};
+
 export default function Home() {
   const [checkoutEmail, setCheckoutEmail] = useState("");
   const [checkoutName, setCheckoutName] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"pagbank" | "bipa" | "pix" | "demo">("pix");
+  const [checkoutCpf, setCheckoutCpf] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"pagbank" | "bipa" | "pix" | "demo">("pagbank");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const [pixData, setPixData] = useState<{ pix_key: string; pix_payload: string; pix_amount: number; pix_copy: string; id: string } | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [pixData, setPixData] = useState<PixState | null>(null);
   const [btcData, setBtcData] = useState<{ btc_address: string; lightning_invoice: string; bip21_uri: string; btc_amount_brl: number; id: string; instructions: string } | null>(null);
+  const [pago, setPago] = useState(false);
   const [referrer, setReferrer] = useState("");
+
+  const cpfDigitos = checkoutCpf.replace(/\D/g, "");
+  // O PagBank exige o CPF do comprador (customer.tax_id) para criar a cobrança.
+  const cpfInvalido = paymentMethod === "pagbank" && cpfDigitos.length !== 11;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -26,12 +48,77 @@ export default function Home() {
 
   const handleBuy = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!checkoutEmail) return;
+    if (!checkoutEmail || cpfInvalido) return;
 
     setCheckoutLoading(true);
     setCheckoutError(null);
+    setAviso(null);
 
     try {
+      // ---- PagBank: cobrança real com PIX e liberação automática ----
+      if (paymentMethod === "pagbank") {
+        const resposta = await fetch("/api/pagbank/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: checkoutEmail,
+            name: checkoutName,
+            taxId: cpfDigitos,
+            ref: referrer,
+          }),
+        });
+        const dados = await resposta.json();
+
+        if (resposta.ok && dados.method === "pagbank_pix") {
+          setPixData({
+            id: dados.order_id,
+            order_id: dados.order_id,
+            pix_amount: dados.amount,
+            pix_copy: dados.qr_code,
+            qr_png: dados.qr_png,
+            pagbank: true,
+          });
+          setBtcData(null);
+          setPago(false);
+          return;
+        }
+
+        if (resposta.status === 503) {
+          // PagBank não configurado neste ambiente: gera o PIX estático em vez
+          // de deixar o comprador sem meio de pagamento.
+          setAviso("PagBank indisponível agora — geramos o Pix manual; a liberação é feita pelo admin.");
+          const alternativa = await fetch("/api/create-checkout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: checkoutEmail,
+              name: checkoutName,
+              method: "pix",
+              ref: referrer,
+            }),
+          });
+          const dadosPix = await alternativa.json();
+          if (dadosPix.method === "pix") {
+            setPixData({
+              id: dadosPix.id,
+              pix_amount: dadosPix.pix_amount,
+              pix_copy: dadosPix.pix_copy,
+              pix_key: dadosPix.pix_key,
+              pagbank: false,
+            });
+            setBtcData(null);
+            setPago(false);
+            return;
+          }
+          setCheckoutError(dadosPix.error || "Não foi possível gerar o Pix.");
+          return;
+        }
+
+        setCheckoutError(dados.error || "Erro ao criar a cobrança no PagBank.");
+        return;
+      }
+
+      // ---- Pix manual / Bitcoin ----
       const response = await fetch("/api/create-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -43,7 +130,13 @@ export default function Home() {
       if (data.url) {
         window.location.href = data.url;
       } else if (data.method === "pix") {
-        setPixData(data);
+        setPixData({
+          id: data.id,
+          pix_amount: data.pix_amount,
+          pix_copy: data.pix_copy,
+          pix_key: data.pix_key,
+          pagbank: false,
+        });
         setBtcData(null);
       } else if (data.method === "bipa") {
         setBtcData(data);
@@ -57,6 +150,45 @@ export default function Home() {
       setCheckoutLoading(false);
     }
   };
+
+  // Leva o comprador até o QR assim que ele aparece — o bloco nasce abaixo do
+  // botão, fora da tela em telas pequenas.
+  useEffect(() => {
+    if (!pixData) return;
+    const painel = document.getElementById("pix-painel");
+    if (painel) painel.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [pixData]);
+
+  // PagBank: consulta o status a cada 5s e libera o curso sozinho quando cai o pagamento.
+  useEffect(() => {
+    const orderId = pixData?.order_id;
+    if (!pixData?.pagbank || !orderId) return;
+
+    let ativo = true;
+
+    const checar = async () => {
+      try {
+        const r = await fetch(`/api/pagbank/status?order=${encodeURIComponent(orderId)}`, {
+          cache: "no-store",
+        });
+        const d = await r.json();
+        if (ativo && d.liberado) {
+          setPago(true);
+          localStorage.setItem("course_access", "granted");
+          window.location.href = `/course?order=${encodeURIComponent(orderId)}`;
+        }
+      } catch {
+        // rede instável: tenta de novo no próximo ciclo
+      }
+    };
+
+    const timer = setInterval(checar, 5000);
+    checar();
+    return () => {
+      ativo = false;
+      clearInterval(timer);
+    };
+  }, [pixData]);
 
   return (
     <div className="space-y-24 pb-24">
@@ -218,33 +350,53 @@ export default function Home() {
                 />
               </div>
 
+              {paymentMethod === "pagbank" && (
+                <div>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    required
+                    placeholder="Seu CPF (exigido pelo PagBank)"
+                    value={checkoutCpf}
+                    maxLength={14}
+                    onChange={(e) => setCheckoutCpf(e.target.value)}
+                    className="w-full p-3 bg-neutral-900 border border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                  />
+                  {checkoutCpf.length > 0 && cpfInvalido && (
+                    <p className="text-[11px] text-neutral-500 mt-1 pl-1">
+                      Informe os 11 dígitos do CPF para gerar o Pix.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Payment Method Selector */}
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
-                  onClick={() => { setPaymentMethod("pix"); setPixData(null); setBtcData(null); }}
-                  className={`p-3 rounded-xl text-sm font-bold transition-all border ${
-                    paymentMethod === "pix"
-                      ? "bg-green-600/20 border-green-500 text-green-400"
-                      : "bg-neutral-900 border-white/10 text-neutral-400 hover:border-neutral-500"
-                  }`}
-                >
-                  📱 Pix
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setPaymentMethod("pagbank"); setPixData(null); setBtcData(null); }}
+                  onClick={() => { setPaymentMethod("pagbank"); setPixData(null); setBtcData(null); setPago(false); setAviso(null); }}
                   className={`p-3 rounded-xl text-sm font-bold transition-all border ${
                     paymentMethod === "pagbank"
                       ? "bg-emerald-600/20 border-emerald-500 text-emerald-400"
                       : "bg-neutral-900 border-white/10 text-neutral-400 hover:border-neutral-500"
                   }`}
                 >
-                  💳 Cartão
+                  💠 PagBank
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setPaymentMethod("bipa"); setPixData(null); setBtcData(null); }}
+                  onClick={() => { setPaymentMethod("pix"); setPixData(null); setBtcData(null); setPago(false); setAviso(null); }}
+                  className={`p-3 rounded-xl text-sm font-bold transition-all border ${
+                    paymentMethod === "pix"
+                      ? "bg-green-600/20 border-green-500 text-green-400"
+                      : "bg-neutral-900 border-white/10 text-neutral-400 hover:border-neutral-500"
+                  }`}
+                >
+                  📱 Pix manual
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setPaymentMethod("bipa"); setPixData(null); setBtcData(null); setPago(false); setAviso(null); }}
                   className={`p-3 rounded-xl text-sm font-bold transition-all border ${
                     paymentMethod === "bipa"
                       ? "bg-orange-600/20 border-orange-500 text-orange-400"
@@ -257,7 +409,7 @@ export default function Home() {
 
               <button
                 type="submit"
-                disabled={checkoutLoading || !checkoutEmail}
+                disabled={checkoutLoading || !checkoutEmail || cpfInvalido}
                 className="w-full py-4 bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 disabled:from-neutral-700 disabled:to-neutral-700 disabled:text-neutral-500 disabled:cursor-not-allowed text-white font-bold rounded-xl text-lg transition-all shadow-lg hover:shadow-emerald-500/20 active:scale-[0.98]"
               >
                 {checkoutLoading ? "Processando..." : "Comprar Agora"}
@@ -265,12 +417,17 @@ export default function Home() {
             </form>
 
             {pixData && (
-              <div className="p-4 bg-green-950/30 border border-green-500/30 rounded-xl text-sm space-y-3">
-                <p className="text-green-400 font-bold">📱 Pix gerado!</p>
+              <div
+                id="pix-painel"
+                className="p-4 bg-green-950/30 border border-green-500/30 rounded-xl text-sm space-y-3"
+              >
+                <p className="text-green-400 font-bold">
+                  {pixData.pagbank ? "💠 Pix gerado pelo PagBank!" : "📱 Pix gerado!"}
+                </p>
                 <p className="text-neutral-300">Pague R$ {pixData.pix_amount.toFixed(2)} via Pix usando o QR Code ou copie o código abaixo:</p>
                 <div className="flex justify-center">
                   <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pixData.pix_payload)}`}
+                    src={pixData.qr_png || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pixData.pix_copy)}`}
                     alt="QR Code Pix"
                     className="bg-white p-2 rounded-lg"
                   />
@@ -279,19 +436,26 @@ export default function Home() {
                   <input
                     type="text"
                     readOnly
-                    value={pixData.pix_payload}
+                    value={pixData.pix_copy}
                     className="flex-1 p-2 bg-neutral-900 border border-white/10 rounded-lg text-xs font-mono text-green-300"
                   />
                   <button
-                    onClick={() => navigator.clipboard.writeText(pixData.pix_payload)}
+                    onClick={() => navigator.clipboard.writeText(pixData.pix_copy)}
                     className="px-3 py-2 bg-green-700 hover:bg-green-600 text-white text-xs font-bold rounded-lg transition-all"
                   >
                     Copiar
                   </button>
                 </div>
-                <p className="text-xs text-neutral-500">
-                  Após pagar, o acesso será liberado em breve.
+                <p className="text-xs text-neutral-400">
+                  {pago
+                    ? "✅ Pagamento confirmado! Abrindo o curso..."
+                    : pixData.pagbank
+                    ? "Estamos conferindo o pagamento com o PagBank — o acesso libera sozinho, não precisa avisar ninguém."
+                    : "Após pagar, o acesso será liberado em breve."}
                 </p>
+                {pixData.order_id && (
+                  <p className="text-[11px] text-neutral-500 font-mono">Pedido: {pixData.order_id}</p>
+                )}
               </div>
             )}
 
@@ -342,15 +506,19 @@ export default function Home() {
               </div>
             )}
 
+            {aviso && (
+              <p className="text-amber-400 text-xs">{aviso}</p>
+            )}
+
             {checkoutError && (
               <p className="text-red-400 text-sm">{checkoutError}</p>
             )}
 
             <p className="text-xs text-neutral-500">
-              {paymentMethod === "pix"
-                ? "Pagamento via Pix • Chave aleatoria"
-                : paymentMethod === "pagbank"
-                ? "Pagamento via PagBank • Pix, cartão de crédito ou boleto"
+              {paymentMethod === "pagbank"
+                ? "Pagamento via PagBank • Pix com liberação automática"
+                : paymentMethod === "pix"
+                ? "Pix manual (chave aleatoria) • liberação pelo admin"
                 : "Pagamento via Bitcoin • Lightning (rápido) ou on-chain"}
             </p>
           </div>
