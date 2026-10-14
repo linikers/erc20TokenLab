@@ -83,9 +83,9 @@ export default function Home() {
           return;
         }
 
-        if (resposta.status === 503) {
-          // PagBank não configurado neste ambiente: gera o PIX estático em vez
-          // de deixar o comprador sem meio de pagamento.
+        if (!resposta.ok) {
+          // PagBank fora do ar ou configuração pendente (token/ambiente): gera o
+          // PIX manual em vez de deixar o comprador sem meio de pagamento.
           setAviso("PagBank indisponível agora — geramos o Pix manual; a liberação é feita pelo admin.");
           const alternativa = await fetch("/api/create-checkout", {
             method: "POST",
