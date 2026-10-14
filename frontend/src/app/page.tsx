@@ -151,6 +151,14 @@ export default function Home() {
     }
   };
 
+  // Leva o comprador até o QR assim que ele aparece — o bloco nasce abaixo do
+  // botão, fora da tela em telas pequenas.
+  useEffect(() => {
+    if (!pixData) return;
+    const painel = document.getElementById("pix-painel");
+    if (painel) painel.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [pixData]);
+
   // PagBank: consulta o status a cada 5s e libera o curso sozinho quando cai o pagamento.
   useEffect(() => {
     const orderId = pixData?.order_id;
@@ -409,7 +417,10 @@ export default function Home() {
             </form>
 
             {pixData && (
-              <div className="p-4 bg-green-950/30 border border-green-500/30 rounded-xl text-sm space-y-3">
+              <div
+                id="pix-painel"
+                className="p-4 bg-green-950/30 border border-green-500/30 rounded-xl text-sm space-y-3"
+              >
                 <p className="text-green-400 font-bold">
                   {pixData.pagbank ? "💠 Pix gerado pelo PagBank!" : "📱 Pix gerado!"}
                 </p>
