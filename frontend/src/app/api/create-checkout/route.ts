@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { writeFileSync, existsSync, readFileSync } from "fs";
 import path from "path";
 import { PRECO_CENTAVOS, PRODUTO } from "@/lib/produto";
+import { gerarPixEstatico } from "@/lib/pix";
 
 const PURCHASES_PATH = path.join(process.cwd(), "src/data/purchases.json");
 
@@ -11,39 +12,6 @@ const PIX_MERCHANT = "CURSO ERC20";
 const PIX_CITY = "SAO PAULO";
 
 const PRECO = PRECO_CENTAVOS / 100;
-
-function crc16(payload: string): string {
-  const poly = 0x1021;
-  let reg = 0xffff;
-  for (let i = 0; i < payload.length; i++) {
-    const byte = payload.charCodeAt(i);
-    reg ^= byte << 8;
-    for (let j = 0; j < 8; j++) {
-      if (reg & 0x8000) reg = (reg << 1) ^ poly;
-      else reg <<= 1;
-      reg &= 0xffff;
-    }
-  }
-  return reg.toString(16).toUpperCase().padStart(4, "0");
-}
-
-function addField(id: number, value: string): string {
-  const size = String(value.length).padStart(2, "0");
-  return `${String(id).padStart(2, "0")}${size}${value}`;
-}
-
-function generatePixPayload(amount: number, txid: string): string {
-  const gui = addField(0, "BR.GOV.BCB.PIX");
-  const key = addField(1, PIX_KEY);
-  const merchant = addField(4, PIX_MERCHANT.slice(0, 25));
-  const city = addField(5, PIX_CITY.slice(0, 15));
-  const value = addField(6, amount.toFixed(2));
-  const txidField = addField(62, txid.slice(0, 25));
-  const merchantAccount = `${gui}${key}`;
-  const mai = addField(26, merchantAccount);
-  const withoutCRC = `000201${mai}${merchant}${value}${city}${txidField}6304`;
-  return `${withoutCRC}${crc16(withoutCRC)}`;
-}
 
 function savePurchase(data: {
   id: string;
@@ -174,7 +142,13 @@ export async function POST(request: Request) {
     // ---- PIX ----
     if (method === "pix") {
       const purchaseId = `pix_${Date.now()}`;
-      const pixPayload = generatePixPayload(PRECO, purchaseId);
+      const pixPayload = gerarPixEstatico({
+        chave: PIX_KEY,
+        nome: PIX_MERCHANT,
+        cidade: PIX_CITY,
+        valorReais: PRECO,
+        txid: purchaseId,
+      });
 
       // Tenta salvar localmente, mas nao trava se falhar (Vercel = read-only fs)
       try {
