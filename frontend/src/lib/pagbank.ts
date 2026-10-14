@@ -121,9 +121,12 @@ export class PagBankErro extends Error {
 }
 
 export function baseUrl(): string {
-  return (
-    process.env.PAGBANK_BASE_URL?.trim().replace(/\/+$/, "") || PAGBANK_SANDBOX
-  );
+  const explicita = process.env.PAGBANK_BASE_URL?.trim().replace(/\/+$/, "");
+  if (explicita) return explicita;
+  // Compatibilidade com a env antiga (`PAGBANK_SANDBOX=true|false`) — sem ela o
+  // default é sandbox, o que faz um token de produção responder 401 aqui.
+  if (process.env.PAGBANK_SANDBOX === "false") return PAGBANK_PRODUCAO;
+  return PAGBANK_SANDBOX;
 }
 
 export function pagbankConfigurado(): boolean {

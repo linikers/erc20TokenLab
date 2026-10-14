@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
+  baseUrl,
   criarPedidoPix,
   normalizar,
   PagBankErro,
@@ -83,6 +84,32 @@ describe("pagbank - normalizar", () => {
     expect(pedido.status).toBe("pendente");
     expect(pedido.pedidoId).toBe("");
     expect(pedido.valorCentavos).toBe(0);
+  });
+});
+
+describe("pagbank - baseUrl (ambiente)", () => {
+  const original = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...original };
+  });
+
+  it("PAGBANK_BASE_URL tem precedência", () => {
+    process.env.PAGBANK_BASE_URL = "https://api.pagseguro.com/";
+    process.env.PAGBANK_SANDBOX = "true";
+    expect(baseUrl()).toBe("https://api.pagseguro.com");
+  });
+
+  it("env antiga PAGBANK_SANDBOX=false aponta para produção", () => {
+    delete process.env.PAGBANK_BASE_URL;
+    process.env.PAGBANK_SANDBOX = "false";
+    expect(baseUrl()).toBe("https://api.pagseguro.com");
+  });
+
+  it("sem configuração o default é sandbox (token de produção aqui dá 401)", () => {
+    delete process.env.PAGBANK_BASE_URL;
+    delete process.env.PAGBANK_SANDBOX;
+    expect(baseUrl()).toBe("https://sandbox.api.pagseguro.com");
   });
 });
 
