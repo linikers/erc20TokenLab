@@ -150,18 +150,50 @@ interface RespostaErroMP {
   error?: string;
   message?: string;
   status?: number;
-  cause?: Array<{ code?: string; description?: string }>;
+  cause?: Array<{ code?: string; description?: string; details?: unknown }>;
+  /** Formato dos 400 da Orders API (verificado ao vivo). */
+  errors?: Array<{ code?: string; message?: string; details?: unknown }>;
 }
 
+function detalhesLegiveis(detalhes: unknown): string {
+  if (!detalhes) return "";
+  if (Array.isArray(detalhes)) {
+    return detalhes
+      .map((d) =>
+        typeof d === "string"
+          ? d
+          : ((d as { property?: string; message?: string })?.property ??
+            (d as { message?: string })?.message ??
+            JSON.stringify(d)),
+      )
+      .filter(Boolean)
+      .join(", ");
+  }
+  if (typeof detalhes === "object") {
+    const d = detalhes as { property?: string; message?: string };
+    return d.property ?? d.message ?? JSON.stringify(d);
+  }
+  return String(detalhes);
+}
+
+/**
+ * Tira o motivo do erro do MP. A Orders API devolve `errors[]` (com `details`
+ * apontando o campo); as APIs antigas devolvem `cause[]`/`message`. Sem isso um
+ * 400 fica mudo — foi o que escondeu, por um tempo, qual campo estava inválido.
+ */
 function motivoErro(dados: RespostaErroMP | null): string {
   const causa = dados?.cause?.[0];
-  return (
-    causa?.description ||
-    causa?.code ||
-    dados?.message ||
-    dados?.error ||
-    ""
-  );
+  const erro = dados?.errors?.[0];
+  const campo = detalhesLegiveis(erro?.details ?? causa?.details);
+
+  const partes = [
+    erro?.code ?? causa?.code,
+    campo ? `campo: ${campo}` : "",
+    erro?.message ?? causa?.description,
+    dados?.message ?? dados?.error,
+  ].filter(Boolean);
+
+  return Array.from(new Set(partes)).join(" — ");
 }
 
 /** 5xx/rede repete; 4xx não (é payload/token/credencial). */
@@ -242,6 +274,22 @@ export interface CriarCobrancaPixParams {
   expiracao?: string;
 }
 
+/**
+ * O Mercado Pago só aceita **letras, números e hífen** em `external_reference`
+ * (verificado ao vivo: e-mail com `@` ou `.` devolve `400 property_value`).
+ * Por isso a referência é saneada aqui, em um lugar só — as rotas podem montar
+ * a referência com e-mail à vontade.
+ */
+export function referenciaValida(referencia: string): string {
+  const limpa = String(referencia ?? "")
+    .replace(/[^A-Za-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 64);
+  // Nunca pode sair vazia: é ela que liga a ordem à nossa compra.
+  return limpa || `ERC20-${Date.now()}`;
+}
+
 export async function criarCobrancaPix(
   params: CriarCobrancaPixParams,
 ): Promise<CobrancaMP> {
@@ -250,12 +298,13 @@ export async function criarCobrancaPix(
     .trim()
     .split(/\s+/);
   const documento = semMascara(params.cliente?.taxId ?? "");
+  const referencia = referenciaValida(params.referencia);
 
   const corpo = {
     type: "online",
     processing_mode: "automatic",
     total_amount: valor,
-    external_reference: params.referencia.slice(0, 64),
+    external_reference: referencia,
     // O MP aceita uma transação por ordem.
     transactions: {
       payments: [
@@ -283,14 +332,9 @@ export async function criarCobrancaPix(
 
   // A URL do webhook é configurada no painel do MP (Webhooks → evento "Order"),
   // não no corpo: mandar campo não suportado devolve 400 unsupported_properties.
-  const resposta = await requisitar<OrdemMP>(
-    "POST",
-    "/v1/orders",
-    corpo,
-    params.referencia.slice(0, 64),
-  );
+  const resposta = await requisitar<OrdemMP>("POST", "/v1/orders", corpo, referencia);
 
-  return normalizarMP(resposta, params.referencia);
+  return normalizarMP(resposta, referencia);
 }
 
 export async function consultarPedido(pedidoId: string): Promise<CobrancaMP> {
