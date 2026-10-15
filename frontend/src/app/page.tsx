@@ -2,26 +2,37 @@
 
 import { useState, useEffect } from "react";
 
+type ProvedorPix = "mercadopago" | "pagbank";
+
 type PixState = {
-  /** id da compra (PIX manual) ou do pedido no PagBank (ORDE_...) */
+  /** id da compra (PIX manual) ou do pedido no provedor (ORD.../ORDE_...) */
   id: string;
   pix_amount: number;
   /** copia-e-cola do PIX */
   pix_copy: string;
   pix_key?: string;
-  /** PagBank: id do pedido — usado para consultar o status */
-  order_id?: string;
-  /** PagBank: PNG/BASE64 do QR */
+  /** PNG do QR (URL do PagBank ou data URI do Mercado Pago) */
   qr_png?: string;
-  /** true = cobrança PagBank (libera sozinha); false = PIX manual (admin libera) */
-  pagbank: boolean;
+  /** Página hospedada do provedor (alternativa ao QR) */
+  link_pagamento?: string;
+  /** Onde consultar se já pagou (definido pelo servidor) */
+  status_url?: string;
+  /** Para onde ir quando liberar */
+  acesso_url?: string;
+  /** Preenchido = cobrança automática (libera sozinha); ausente = PIX manual */
+  provedor?: ProvedorPix;
+};
+
+const NOME_PROVEDOR: Record<ProvedorPix, string> = {
+  mercadopago: "Mercado Pago",
+  pagbank: "PagBank",
 };
 
 export default function Home() {
   const [checkoutEmail, setCheckoutEmail] = useState("");
   const [checkoutName, setCheckoutName] = useState("");
   const [checkoutCpf, setCheckoutCpf] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"pagbank" | "bipa" | "pix" | "demo">("pagbank");
+  const [paymentMethod, setPaymentMethod] = useState<"pix_auto" | "bipa" | "pix" | "demo">("pix_auto");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -31,8 +42,8 @@ export default function Home() {
   const [referrer, setReferrer] = useState("");
 
   const cpfDigitos = checkoutCpf.replace(/\D/g, "");
-  // O PagBank exige o CPF do comprador (customer.tax_id) para criar a cobrança.
-  const cpfInvalido = paymentMethod === "pagbank" && cpfDigitos.length !== 11;
+  // Os provedores exigem o CPF do comprador (PagBank: customer.tax_id) para criar a cobrança.
+  const cpfInvalido = paymentMethod === "pix_auto" && cpfDigitos.length !== 11;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -55,9 +66,9 @@ export default function Home() {
     setAviso(null);
 
     try {
-      // ---- PagBank: cobrança real com PIX e liberação automática ----
-      if (paymentMethod === "pagbank") {
-        const resposta = await fetch("/api/pagbank/checkout", {
+      // ---- Pix automático (Mercado Pago → PagBank, na ordem do servidor) ----
+      if (paymentMethod === "pix_auto") {
+        const resposta = await fetch("/api/pix/checkout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -69,14 +80,16 @@ export default function Home() {
         });
         const dados = await resposta.json();
 
-        if (resposta.ok && dados.method === "pagbank_pix") {
+        if (resposta.ok && dados.method === "pix_automatico") {
           setPixData({
             id: dados.order_id,
-            order_id: dados.order_id,
             pix_amount: dados.amount,
             pix_copy: dados.qr_code,
             qr_png: dados.qr_png,
-            pagbank: true,
+            link_pagamento: dados.link_pagamento,
+            status_url: dados.status_url,
+            acesso_url: dados.acesso_url,
+            provedor: dados.provedor,
           });
           setBtcData(null);
           setPago(false);
@@ -84,9 +97,11 @@ export default function Home() {
         }
 
         if (!resposta.ok) {
-          // PagBank fora do ar ou configuração pendente (token/ambiente): gera o
+          // Nenhum provedor automático conseguiu criar a cobrança agora: gera o
           // PIX manual em vez de deixar o comprador sem meio de pagamento.
-          setAviso("PagBank indisponível agora — geramos o Pix manual; a liberação é feita pelo admin.");
+          setAviso(
+            "Pix automático indisponível agora — geramos o Pix manual; nesse caso a liberação é feita pelo admin.",
+          );
           const alternativa = await fetch("/api/create-checkout", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -104,7 +119,6 @@ export default function Home() {
               pix_amount: dadosPix.pix_amount,
               pix_copy: dadosPix.pix_copy,
               pix_key: dadosPix.pix_key,
-              pagbank: false,
             });
             setBtcData(null);
             setPago(false);
@@ -114,7 +128,7 @@ export default function Home() {
           return;
         }
 
-        setCheckoutError(dados.error || "Erro ao criar a cobrança no PagBank.");
+        setCheckoutError(dados.error || "Erro ao criar a cobrança no provedor.");
         return;
       }
 
@@ -135,7 +149,6 @@ export default function Home() {
           pix_amount: data.pix_amount,
           pix_copy: data.pix_copy,
           pix_key: data.pix_key,
-          pagbank: false,
         });
         setBtcData(null);
       } else if (data.method === "bipa") {
@@ -159,23 +172,23 @@ export default function Home() {
     if (painel) painel.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [pixData]);
 
-  // PagBank: consulta o status a cada 5s e libera o curso sozinho quando cai o pagamento.
+  // Pix automático: consulta o status a cada 5s e libera o curso sozinho quando
+  // o pagamento cai. A URL de consulta e o destino vêm do servidor, então o front
+  // não precisa saber se quem cobrou foi Mercado Pago ou PagBank.
   useEffect(() => {
-    const orderId = pixData?.order_id;
-    if (!pixData?.pagbank || !orderId) return;
+    const statusUrl = pixData?.status_url;
+    if (!statusUrl) return;
 
     let ativo = true;
 
     const checar = async () => {
       try {
-        const r = await fetch(`/api/pagbank/status?order=${encodeURIComponent(orderId)}`, {
-          cache: "no-store",
-        });
+        const r = await fetch(statusUrl, { cache: "no-store" });
         const d = await r.json();
         if (ativo && d.liberado) {
           setPago(true);
           localStorage.setItem("course_access", "granted");
-          window.location.href = `/course?order=${encodeURIComponent(orderId)}`;
+          window.location.href = pixData?.acesso_url ?? "/course";
         }
       } catch {
         // rede instável: tenta de novo no próximo ciclo
@@ -350,13 +363,13 @@ export default function Home() {
                 />
               </div>
 
-              {paymentMethod === "pagbank" && (
+              {paymentMethod === "pix_auto" && (
                 <div>
                   <input
                     type="text"
                     inputMode="numeric"
                     required
-                    placeholder="Seu CPF (exigido pelo PagBank)"
+                    placeholder="Seu CPF (exigido pelo provedor)"
                     value={checkoutCpf}
                     maxLength={14}
                     onChange={(e) => setCheckoutCpf(e.target.value)}
@@ -374,14 +387,14 @@ export default function Home() {
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
-                  onClick={() => { setPaymentMethod("pagbank"); setPixData(null); setBtcData(null); setPago(false); setAviso(null); }}
+                  onClick={() => { setPaymentMethod("pix_auto"); setPixData(null); setBtcData(null); setPago(false); setAviso(null); }}
                   className={`p-3 rounded-xl text-sm font-bold transition-all border ${
-                    paymentMethod === "pagbank"
+                    paymentMethod === "pix_auto"
                       ? "bg-emerald-600/20 border-emerald-500 text-emerald-400"
                       : "bg-neutral-900 border-white/10 text-neutral-400 hover:border-neutral-500"
                   }`}
                 >
-                  💠 PagBank
+                  💠 Pix
                 </button>
                 <button
                   type="button"
@@ -422,7 +435,9 @@ export default function Home() {
                 className="p-4 bg-green-950/30 border border-green-500/30 rounded-xl text-sm space-y-3"
               >
                 <p className="text-green-400 font-bold">
-                  {pixData.pagbank ? "💠 Pix gerado pelo PagBank!" : "📱 Pix gerado!"}
+                  {pixData.provedor
+                    ? `💠 Pix gerado pelo ${NOME_PROVEDOR[pixData.provedor]}!`
+                    : "📱 Pix gerado!"}
                 </p>
                 <p className="text-neutral-300">Pague R$ {pixData.pix_amount.toFixed(2)} via Pix usando o QR Code ou copie o código abaixo:</p>
                 <div className="flex justify-center">
@@ -446,15 +461,25 @@ export default function Home() {
                     Copiar
                   </button>
                 </div>
+                {pixData.link_pagamento && (
+                  <a
+                    href={pixData.link_pagamento}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block text-center text-xs text-blue-400 underline"
+                  >
+                    ou abrir a página de pagamento do provedor
+                  </a>
+                )}
                 <p className="text-xs text-neutral-400">
                   {pago
                     ? "✅ Pagamento confirmado! Abrindo o curso..."
-                    : pixData.pagbank
-                    ? "Estamos conferindo o pagamento com o PagBank — o acesso libera sozinho, não precisa avisar ninguém."
+                    : pixData.provedor
+                    ? `Estamos conferindo o pagamento com o ${NOME_PROVEDOR[pixData.provedor]} — o acesso libera sozinho, não precisa avisar ninguém.`
                     : "Após pagar, o acesso será liberado em breve."}
                 </p>
-                {pixData.order_id && (
-                  <p className="text-[11px] text-neutral-500 font-mono">Pedido: {pixData.order_id}</p>
+                {pixData.provedor && (
+                  <p className="text-[11px] text-neutral-500 font-mono">Pedido: {pixData.id}</p>
                 )}
               </div>
             )}
@@ -515,8 +540,8 @@ export default function Home() {
             )}
 
             <p className="text-xs text-neutral-500">
-              {paymentMethod === "pagbank"
-                ? "Pagamento via PagBank • Pix com liberação automática"
+              {paymentMethod === "pix_auto"
+                ? "Pagamento via Pix com liberação automática"
                 : paymentMethod === "pix"
                 ? "Pix manual (chave aleatoria) • liberação pelo admin"
                 : "Pagamento via Bitcoin • Lightning (rápido) ou on-chain"}
