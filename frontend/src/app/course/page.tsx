@@ -1317,7 +1317,7 @@ export default function CoursePage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const purchaseId = params.get("purchase_id");
-    const orderId = params.get("order");
+    const mp = params.get("mp");
 
     // Check localStorage first
     const storedAccess = localStorage.getItem("course_access");
@@ -1327,10 +1327,10 @@ export default function CoursePage() {
       return;
     }
 
-    // Confere no servidor: `order` = cobrança do PagBank (já paga?) ou
-    // `purchase_id` = compra aprovada pelo admin.
-    const consulta = orderId
-      ? `/api/verify-access?order=${encodeURIComponent(orderId)}`
+    // Confere no servidor: `mp` = ordem do Mercado Pago (já paga?) ou
+    // `purchase_id` = compra do Pix manual aprovada pelo admin.
+    const consulta = mp
+      ? `/api/verify-access?mp=${encodeURIComponent(mp)}`
       : purchaseId
         ? `/api/verify-access?purchase_id=${encodeURIComponent(purchaseId)}`
         : null;
