@@ -41,6 +41,20 @@ export async function POST(request: Request) {
       cliente: { nome: name || "Cliente", email, taxId },
     });
 
+    if (cobranca.teste) {
+      console.error(
+        "[mercadopago checkout] MP respondeu live_mode=false: a credencial é de TESTE.",
+      );
+      return NextResponse.json(
+        {
+          fallback: "pix_estatico",
+          motivo:
+            "credencial de teste do Mercado Pago: a cobrança não é pagável (MP_ACCESS_TOKEN precisa ser o de produção)",
+        },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json({
       provedor: "mercadopago",
       method: "pix_automatico",

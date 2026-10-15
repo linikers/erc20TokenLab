@@ -28,6 +28,8 @@ export async function GET(request: Request) {
       status_interno: cobranca.status,
       liberado: cobranca.status === "pago",
       valor: cobranca.valorCentavos / 100,
+      // `true` = ordem em modo de teste (QR impagável): sinaliza credencial errada
+      teste: cobranca.teste ?? false,
     });
   } catch (erro) {
     const e = erro as MercadoPagoErro;

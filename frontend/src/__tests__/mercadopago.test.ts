@@ -77,6 +77,13 @@ describe("mercadopago - normalizarMP", () => {
     expect(cobranca.pedidoId).toBe("");
     expect(cobranca.valorCentavos).toBe(0);
   });
+
+  it("marca ordem de TESTE quando o MP diz live_mode=false (QR impagável)", () => {
+    expect(normalizarMP({ id: "ORDTST01", live_mode: false }).teste).toBe(true);
+    expect(normalizarMP({ id: "ORD01", live_mode: true }).teste).toBeFalsy();
+    // ausente = desconhecido (não vira suspeita nem alarde falso)
+    expect(normalizarMP({ id: "ORD01" }).teste).toBeFalsy();
+  });
 });
 
 describe("mercadopago - ambiente", () => {

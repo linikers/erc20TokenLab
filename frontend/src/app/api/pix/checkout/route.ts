@@ -45,6 +45,23 @@ export async function POST(request: Request) {
       cliente: { nome: name || "Cliente", email, taxId },
     });
 
+    // Credencial de teste cria ordem de teste: o QR NÃO é pagável (o banco diz
+    // "QR não encontrado"). Melhor cair no Pix manual do que mostrar QR furado.
+    if (cobranca.teste) {
+      console.error(
+        "[pix/checkout] MP respondeu live_mode=false: a credencial é de TESTE. " +
+          "Use o Access Token de produção (Suas integrações → Produção → Credenciais de produção).",
+      );
+      return NextResponse.json(
+        {
+          fallback: "pix_estatico",
+          motivo:
+            "credencial de teste do Mercado Pago: a cobrança não é pagável (MP_ACCESS_TOKEN precisa ser o de produção)",
+        },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json({
       provedor: "mercadopago",
       method: "pix_automatico",
