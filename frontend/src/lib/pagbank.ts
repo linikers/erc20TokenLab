@@ -179,6 +179,18 @@ async function requisitar<T>(
     ultimoCorpo = dados;
 
     if (resposta.status === 401 || resposta.status === 403) {
+      const codigo = dados?.error_messages?.[0]?.code;
+      const descricao = dados?.error_messages?.[0]?.description ?? "";
+      // 403 com ACCESS_DENIED não é token errado: é a conta sem a API de
+      // Pedidos liberada (verificado ao vivo). Mensagem diferente porque a
+      // ação é outra — quem resolve é o time de Integrações do PagBank.
+      if (codigo === "ACCESS_DENIED" || /whitelist/i.test(descricao)) {
+        throw new PagBankErro(
+          "A conta PagBank não tem a API de Pedidos liberada (ACCESS_DENIED: whitelist access required). O token está certo — falta o PagBank habilitar a API para a conta; peça ao time de Integrações.",
+          resposta.status,
+          dados,
+        );
+      }
       throw new PagBankErro(
         "PagBank recusou o token (401/403). Confira o ambiente: sandbox usa o token do Portal do Desenvolvedor; produção usa Vendas → Integrações → Gerar Token.",
         resposta.status,

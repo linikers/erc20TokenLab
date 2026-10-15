@@ -198,6 +198,23 @@ describe("pagbank - criarPedidoPix", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("403 ACCESS_DENIED explica que falta liberação da API (não é token errado)", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 403,
+      json: async () => ({
+        error_messages: [
+          { code: "ACCESS_DENIED", description: "whitelist access required. Contact PagSeguro" },
+        ],
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(criarPedidoPix(params)).rejects.toThrow(/Integrações/);
+    await expect(criarPedidoPix(params)).rejects.toThrow(/API de Pedidos liberada/);
+    expect(fetchMock).toHaveBeenCalledTimes(2); // 403 não repete: 1 tentativa por chamada
+  });
+
   it("sem PAGBANK_TOKEN explica o que falta", async () => {
     delete process.env.PAGBANK_TOKEN;
     await expect(criarPedidoPix(params)).rejects.toThrow(/PAGBANK_TOKEN/);
