@@ -5,6 +5,7 @@ import {
   MercadoPagoErro,
   mpBaseUrl,
   normalizarMP,
+  referenciaValida,
   statusInternoMP,
 } from "@/lib/mercadopago";
 
@@ -92,6 +93,28 @@ describe("mercadopago - ambiente", () => {
     process.env.MP_ACCESS_TOKEN = "APP_USR-teste";
     expect(mercadopagoConfigurado()).toBe(true);
     expect(mpBaseUrl()).toBe("https://api.mercadopago.com");
+  });
+});
+
+describe("mercadopago - referenciaValida", () => {
+  it("tira o que o MP recusa (só letras, números e hífen)", () => {
+    // referência montada com e-mail era o que quebrava a cobrança em produção
+    expect(referenciaValida("ERC20-1759930-liniker@example.com")).toBe(
+      "ERC20-1759930-liniker-example-com",
+    );
+    expect(referenciaValida("comprador@gmail.com")).toBe("comprador-gmail-com");
+    expect(referenciaValida("a_b.c d@e")).toBe("a-b-c-d-e");
+  });
+
+  it("não deixa passar nada fora do permitido e limita a 64", () => {
+    const limpa = referenciaValida("a".repeat(80) + "@@");
+    expect(limpa).toHaveLength(64);
+    expect(limpa).toMatch(/^[A-Za-z0-9-]+$/);
+    expect(referenciaValida("@@@,,,..")).toMatch(/^[A-Za-z0-9-]+$/);
+  });
+
+  it("nunca devolve vazio (é a referência que liga a ordem à compra)", () => {
+    expect(referenciaValida("")).toMatch(/^ERC20-\d+$/);
   });
 });
 
@@ -191,14 +214,46 @@ describe("mercadopago - criarCobrancaPix", () => {
     await expect(criarCobrancaPix(params)).rejects.toThrow(/usuário de teste/i);
   });
 
-  it("400 traz o motivo devolvido pelo Mercado Pago", async () => {
+  it("400 traz o motivo e o CAMPO devolvido pelo Mercado Pago", async () => {
     vi.stubGlobal("fetch", async () => ({
       ok: false,
       status: 400,
-      json: async () => ({ error: "unsupported_properties", cause: [{ code: "unsupported_properties", description: "notification_url não suportado" }] }),
+      json: async () => ({
+        errors: [
+          {
+            code: "property_value",
+            message: "Invalid value for property",
+            details: [{ property: "external_reference", message: "must contain only letters, numbers and hyphen" }],
+          },
+        ],
+      }),
     }));
 
-    await expect(criarCobrancaPix(params)).rejects.toThrow(/notification_url não suportado/);
+    let erro: MercadoPagoErro | undefined;
+    try {
+      await criarCobrancaPix(params);
+    } catch (e) {
+      erro = e as MercadoPagoErro;
+    }
+    expect(erro?.message).toContain("property_value");
+    expect(erro?.message).toContain("external_reference");
+  });
+
+  it("referência com e-mail vai saneada no corpo (regressão do 400 em produção)", async () => {
+    let corpoEnviado: { external_reference?: string } = {};
+    vi.stubGlobal("fetch", async (_url: string, init: { body: string }) => {
+      corpoEnviado = JSON.parse(init.body);
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({ id: "ORD01", total_amount: "19.00", status: "action_required" }),
+      } as unknown as Response;
+    });
+
+    await criarCobrancaPix({ ...params, referencia: `ERC20-123-${params.cliente.email}` });
+
+    expect(corpoEnviado.external_reference).toBe("ERC20-123-liniker-example-com");
+    expect(corpoEnviado.external_reference).not.toContain("@");
   });
 
   it("sem MP_ACCESS_TOKEN explica o que falta", async () => {
