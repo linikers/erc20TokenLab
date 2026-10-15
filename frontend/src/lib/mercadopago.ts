@@ -76,6 +76,12 @@ export interface OrdemMP {
   total_amount?: string;
   status?: string;
   status_detail?: string;
+  /**
+   * `false` = a ordem foi criada em **modo de teste** (credencial de usuário de
+   * teste): o QR gerado NÃO é pagável por banco nenhum. Verificado ao vivo — o
+   * payload vinha com o recebedor `TESTUSER…` e o banco dizia "QR não encontrado".
+   */
+  live_mode?: boolean;
   transactions?: { payments?: PagamentoMP[] };
 }
 
@@ -109,6 +115,8 @@ export interface CobrancaMP {
   qrCodeImagem?: string;
   /** Página hospedada do MP (alternativa ao QR). */
   linkPagamento?: string;
+  /** `true` = ordem em modo de teste (credencial de teste): QR impagável. */
+  teste?: boolean;
   bruto: unknown;
 }
 
@@ -365,6 +373,9 @@ export function normalizarMP(
     qrCodeTexto: metodo.qr_code,
     qrCodeImagem: base64 ? `data:image/png;base64,${base64}` : undefined,
     linkPagamento: metodo.ticket_url,
+    // Só marca como teste quando o MP diz explicitamente `live_mode: false`:
+    // campo ausente não vira suspeita, e sim desconhecido.
+    teste: resposta?.live_mode === false ? true : undefined,
     bruto: resposta,
   };
 }
