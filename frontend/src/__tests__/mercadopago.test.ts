@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
+  consultarPagamento,
   criarCobrancaPix,
   mercadopagoConfigurado,
   MercadoPagoErro,
@@ -122,6 +123,47 @@ describe("mercadopago - referenciaValida", () => {
 
   it("nunca devolve vazio (é a referência que liga a ordem à compra)", () => {
     expect(referenciaValida("")).toMatch(/^ERC20-\d+$/);
+  });
+});
+
+describe("mercadopago - consultarPagamento (webhook com id de pagamento)", () => {
+  beforeEach(() => {
+    process.env.MP_ACCESS_TOKEN = "APP_USR-teste";
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.MP_ACCESS_TOKEN;
+  });
+
+  it("lê status, valor e a ordem apontada pelo pagamento", async () => {
+    vi.stubGlobal("fetch", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: 183312519297,
+        status: "approved",
+        status_detail: "accredited",
+        transaction_amount: 19,
+        external_reference: "ERC20-123",
+        order: { id: "ORD01M50CPV2Y" },
+      }),
+    }));
+
+    const pagamento = await consultarPagamento("183312519297");
+    expect(pagamento.status).toBe("pago");
+    expect(pagamento.statusDetalhe).toBe("accredited");
+    expect(pagamento.valorCentavos).toBe(1900);
+    expect(pagamento.referencia).toBe("ERC20-123");
+    expect(pagamento.ordemId).toBe("ORD01M50CPV2Y");
+  });
+
+  it("pagamento pendente não libera", async () => {
+    vi.stubGlobal("fetch", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 1, status: "pending", transaction_amount: 19 }),
+    }));
+    expect((await consultarPagamento("1")).status).toBe("pendente");
   });
 });
 
