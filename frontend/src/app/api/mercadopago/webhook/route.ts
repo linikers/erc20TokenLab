@@ -1,14 +1,21 @@
 import { NextResponse } from "next/server";
-import { consultarPedido, MercadoPagoErro } from "@/lib/mercadopago";
+import {
+  consultarPagamento,
+  consultarPedido,
+  MercadoPagoErro,
+} from "@/lib/mercadopago";
 import { PRECO_CENTAVOS } from "@/lib/produto";
 
 /**
- * Webhook do Mercado Pago (evento **Order**, configurado no painel:
- * Webhooks → modo produção → URL + evento "Order").
+ * Webhook do Mercado Pago (painel: Webhooks → URL + eventos).
  *
- * O corpo é um envelope de aviso: `{ action, type: "order", data: { id } }`.
- * Ele **não** traz o status — a verdade se lê em `GET /v1/orders/{id}`, então é
- * isso que fazemos aqui (mesma regra do PagBank: não confiar no que chega).
+ * Duas coisas aprendidas ao vivo:
+ * 1. o corpo é só um aviso (`{ action, type, data: { id } }`) — o status se lê na
+ *    API;
+ * 2. o `data.id` **nem sempre é o id da ordem**: em notificação de pagamento vem o
+ *    id do pagamento (ex.: `183312519297`) e consultar `/v1/orders/{id}` com ele
+ *    devolve `404 order_not_found`. Por isso o handler aceita os dois caminhos e,
+ *    quando o pagamento aponta a ordem, confirma o status pelo recurso canônico.
  *
  * Sempre responder 200: o MP espera confirmação em até 22s e reenvia a cada
  * 15 minutos enquanto não receber.
@@ -20,50 +27,103 @@ interface NotificacaoMP {
 }
 
 export async function POST(request: Request) {
-  try {
-    const url = new URL(request.url);
-    const body = (await request.json().catch(() => ({}))) as NotificacaoMP;
+  const url = new URL(request.url);
+  let tipo = url.searchParams.get("type") ?? "";
+  let id = url.searchParams.get("data.id") ?? "";
+  let acao = "";
 
-    // O id vem no corpo e/ou nos query params (data.id=...&type=order).
-    const tipo = body?.type ?? url.searchParams.get("type") ?? "";
-    const id = body?.data?.id ?? url.searchParams.get("data.id") ?? "";
+  try {
+    const body = (await request.json().catch(() => ({}))) as NotificacaoMP;
+    tipo = body?.type ?? tipo;
+    id = body?.data?.id ?? id;
+    acao = body?.action ?? "";
+
+    // Log sempre: sem tipo/id registrados não dá para diagnosticar notificação.
+    console.log("[mercadopago webhook] recebido", { tipo, id, acao });
 
     if (!id) {
       console.warn("[mercadopago webhook] aviso sem id", { tipo });
       return NextResponse.json({ received: true });
     }
 
-    if (tipo !== "order") {
-      // Só o tópico "order" está configurado para esta aplicação; qualquer outro
-      // é registrado e ignorado (nada é liberado sem confirmar na API).
-      console.log("[mercadopago webhook] tópico ignorado", { tipo, id });
-      return NextResponse.json({ received: true });
+    // ---- 1) Notificação de ordem ----
+    if (tipo === "order" || tipo === "") {
+      try {
+        const cobranca = await consultarPedido(id);
+        return resposta({
+          orderId: cobranca.pedidoId,
+          referencia: cobranca.referencia,
+          statusBruto: cobranca.statusBruto,
+          status: cobranca.status,
+          valorCentavos: cobranca.valorCentavos,
+        });
+      } catch (erro) {
+        const e = erro as MercadoPagoErro;
+        // `404 order_not_found` é esperado quando o id é de pagamento: cai no
+        // caminho 2 em vez de estourar.
+        if (e.http !== 404) throw erro;
+        console.log("[mercadopago webhook] id não é de ordem, tentando como pagamento", { id });
+      }
     }
 
-    const cobranca = await consultarPedido(id);
+    // ---- 2) Notificação de pagamento (ou id que não era ordem) ----
+    const pagamento = await consultarPagamento(id);
 
-    if (cobranca.status === "pago" && cobranca.valorCentavos !== PRECO_CENTAVOS) {
-      console.error("[mercadopago webhook] valor divergente — acesso NÃO liberado", {
-        referencia: cobranca.referencia,
-        esperadoCentavos: PRECO_CENTAVOS,
-        recebidoCentavos: cobranca.valorCentavos,
+    // Se o pagamento revelar a ordem, confirma pelo recurso canônico.
+    if (pagamento.ordemId) {
+      const cobranca = await consultarPedido(pagamento.ordemId);
+      return resposta({
+        orderId: cobranca.pedidoId,
+        referencia: cobranca.referencia || pagamento.referencia,
+        statusBruto: cobranca.statusBruto ?? pagamento.statusBruto,
+        status: cobranca.status,
+        valorCentavos: cobranca.valorCentavos || pagamento.valorCentavos,
       });
-      return NextResponse.json({ received: true });
     }
 
-    console.log("[mercadopago webhook]", {
-      order_id: cobranca.pedidoId,
-      referencia: cobranca.referencia,
-      statusBruto: cobranca.statusBruto,
-      status: cobranca.status,
-      liberado: cobranca.status === "pago",
+    return resposta({
+      orderId: "",
+      referencia: pagamento.referencia,
+      statusBruto: pagamento.statusBruto,
+      status: pagamento.status,
+      valorCentavos: pagamento.valorCentavos,
     });
-
-    return NextResponse.json({ received: true });
   } catch (erro) {
     const e = erro as MercadoPagoErro;
-    console.error("[mercadopago webhook] falha ao processar:", e?.message ?? erro);
+    console.error("[mercadopago webhook] falha ao processar:", {
+      tipo,
+      id,
+      acao,
+      erro: e?.message ?? String(erro),
+    });
     // 200 mesmo com erro interno: 4xx/5xx faz o MP reenviar em loop.
     return NextResponse.json({ received: true });
   }
+}
+
+function resposta(dados: {
+  orderId: string;
+  referencia: string;
+  statusBruto?: string;
+  status: string;
+  valorCentavos: number;
+}) {
+  if (dados.status === "pago" && dados.valorCentavos !== PRECO_CENTAVOS) {
+    console.error("[mercadopago webhook] valor divergente — acesso NÃO liberado", {
+      referencia: dados.referencia,
+      esperadoCentavos: PRECO_CENTAVOS,
+      recebidoCentavos: dados.valorCentavos,
+    });
+    return NextResponse.json({ received: true });
+  }
+
+  console.log("[mercadopago webhook]", {
+    order_id: dados.orderId,
+    referencia: dados.referencia,
+    statusBruto: dados.statusBruto,
+    status: dados.status,
+    liberado: dados.status === "pago",
+  });
+
+  return NextResponse.json({ received: true });
 }

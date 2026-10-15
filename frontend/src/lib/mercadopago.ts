@@ -345,6 +345,44 @@ export async function consultarPedido(pedidoId: string): Promise<CobrancaMP> {
   return normalizarMP(resposta, resposta?.external_reference ?? "");
 }
 
+/** Pagamento solto (`GET /v1/payments/{id}`) — a API antiga, que o webhook também usa. */
+export interface PagamentoSoltMP {
+  id?: string | number;
+  status?: string;
+  status_detail?: string;
+  transaction_amount?: number;
+  external_reference?: string;
+  order?: { id?: string };
+  order_id?: string;
+}
+
+/** Lê um pagamento pelo id. Devolve status interno, valor e a ordem (quando houver). */
+export async function consultarPagamento(pagamentoId: string): Promise<{
+  status: StatusInterno;
+  statusBruto?: string;
+  statusDetalhe?: string;
+  valorCentavos: number;
+  referencia: string;
+  ordemId?: string;
+}> {
+  const dados = await requisitar<PagamentoSoltMP>(
+    "GET",
+    `/v1/payments/${encodeURIComponent(pagamentoId)}`,
+  );
+
+  return {
+    status: statusInternoMP({
+      status: dados?.status,
+      transactions: { payments: [{ status: dados?.status }] },
+    }),
+    statusBruto: dados?.status,
+    statusDetalhe: dados?.status_detail,
+    valorCentavos: Math.round(Number(dados?.transaction_amount ?? 0) * 100),
+    referencia: dados?.external_reference ?? "",
+    ordemId: dados?.order?.id ?? dados?.order_id,
+  };
+}
+
 /** Achata a ordem do MP no que o nosso código usa. */
 export function normalizarMP(
   resposta: OrdemMP | null,
