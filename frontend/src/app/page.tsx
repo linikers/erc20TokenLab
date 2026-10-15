@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 
-type ProvedorPix = "mercadopago" | "pagbank";
+type ProvedorPix = "mercadopago";
 
 type PixState = {
   /** id da compra (PIX manual) ou do pedido no provedor (ORD.../ORDE_...) */
@@ -25,7 +25,6 @@ type PixState = {
 
 const NOME_PROVEDOR: Record<ProvedorPix, string> = {
   mercadopago: "Mercado Pago",
-  pagbank: "PagBank",
 };
 
 export default function Home() {
