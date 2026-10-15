@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  baseUrl,
   criarPedidoPix,
   pagbankConfigurado,
   PagBankErro,
@@ -31,12 +32,13 @@ export async function POST(request: Request) {
         {
           fallback: "pix_estatico",
           motivo: "PAGBANK_TOKEN não configurado neste ambiente",
+          ambiente: baseUrl(),
         },
         { status: 503 },
       );
     }
 
-    const baseUrl =
+    const urlPublica =
       process.env.NEXT_PUBLIC_URL?.replace(/\/+$/, "") ||
       "https://ecr20ttk.vercel.app";
 
@@ -48,7 +50,7 @@ export async function POST(request: Request) {
       valorCentavos: PRECO_CENTAVOS,
       descricao: PRODUTO,
       cliente: { nome: name || "Cliente", email, taxId },
-      notificationUrls: [`${baseUrl}/api/pagbank/webhook`],
+      notificationUrls: [`${urlPublica}/api/pagbank/webhook`],
       expiracaoMinutos: expiracaoPixMinutos(),
     });
 
@@ -65,9 +67,28 @@ export async function POST(request: Request) {
     });
   } catch (erro) {
     const e = erro as PagBankErro;
-    console.error("[pagbank checkout]", e.message, e.detalhes ?? "");
+    // O ambiente do PagBank NÃO é segredo: deixar isso na resposta evita caçar
+    // em log por que "o token não funciona" (sandbox × produção é a causa nº 1).
+    const detalhePagBank = (
+      e.detalhes as
+        | { error_messages?: Array<{ code?: string; description?: string }> }
+        | undefined
+    )?.error_messages?.[0];
+
+    console.error("[pagbank checkout]", {
+      ambiente: baseUrl(),
+      http: e.http,
+      erro: e.message,
+      pagbank: detalhePagBank ?? e.detalhes ?? null,
+    });
+
     return NextResponse.json(
-      { error: e.message || "Erro ao criar a cobrança no PagBank" },
+      {
+        error: e.message || "Erro ao criar a cobrança no PagBank",
+        ambiente: baseUrl(),
+        pagbank_code: detalhePagBank?.code,
+        pagbank_descricao: detalhePagBank?.description,
+      },
       { status: 502 },
     );
   }
