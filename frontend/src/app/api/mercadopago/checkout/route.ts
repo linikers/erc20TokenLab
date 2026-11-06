@@ -5,7 +5,7 @@ import {
   MercadoPagoErro,
   mpBaseUrl,
 } from "@/lib/mercadopago";
-import { PRECO_CENTAVOS, PRODUTO } from "@/lib/produto";
+import { getProduto } from "@/lib/catalogo";
 
 /**
  * Cria a cobrança Pix no Mercado Pago (Orders API) e devolve o QR.
@@ -15,7 +15,8 @@ import { PRECO_CENTAVOS, PRODUTO } from "@/lib/produto";
  */
 export async function POST(request: Request) {
   try {
-    const { email, name, taxId, ref } = await request.json();
+    const { email, name, taxId, ref, produto } = await request.json();
+    const item = getProduto(produto);
 
     if (!email) {
       return NextResponse.json({ error: "Email é obrigatório" }, { status: 400 });
@@ -32,12 +33,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const referencia = `ERC20-${Date.now()}-${String(email).slice(0, 12)}`;
+    const referencia = `${item.refPrefixo}-${Date.now()}-${String(email).slice(0, 12)}`;
 
     const cobranca = await criarCobrancaPix({
       referencia,
-      valorCentavos: PRECO_CENTAVOS,
-      descricao: PRODUTO,
+      valorCentavos: item.precoCentavos,
+      descricao: item.nome,
       cliente: { nome: name || "Cliente", email, taxId },
     });
 
@@ -58,6 +59,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       provedor: "mercadopago",
       method: "pix_automatico",
+      produto: item.id,
       order_id: cobranca.pedidoId,
       payment_id: cobranca.pagamentoId,
       referencia,
@@ -67,7 +69,7 @@ export async function POST(request: Request) {
       amount: cobranca.valorCentavos / 100,
       status: cobranca.statusBruto ?? "action_required",
       status_url: `/api/mercadopago/status?order=${encodeURIComponent(cobranca.pedidoId)}`,
-      acesso_url: `/course?mp=${encodeURIComponent(cobranca.pedidoId)}`,
+      acesso_url: `${item.paginaAcesso}?mp=${encodeURIComponent(cobranca.pedidoId)}`,
       ref: ref || "",
     });
   } catch (erro) {

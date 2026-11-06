@@ -4,7 +4,7 @@ import {
   consultarPedido,
   MercadoPagoErro,
 } from "@/lib/mercadopago";
-import { PRECO_CENTAVOS } from "@/lib/produto";
+import { produtoPorReferencia, produtoPorValor } from "@/lib/catalogo";
 
 /**
  * Webhook do Mercado Pago (painel: Webhooks → URL + eventos).
@@ -108,18 +108,24 @@ function resposta(dados: {
   status: string;
   valorCentavos: number;
 }) {
-  if (dados.status === "pago" && dados.valorCentavos !== PRECO_CENTAVOS) {
-    console.error("[mercadopago webhook] valor divergente — acesso NÃO liberado", {
+  // O preço aceito é o de QUALQUER produto do catálogo; o produto comprado vem
+  // do prefixo da referência (`FWB3-...`, `COMBO-...`). Valor fora do catálogo
+  // não libera — é a trava contra cobrança de R$ 0,01 virando acesso.
+  const produtoDoValor = produtoPorValor(dados.valorCentavos);
+  if (dados.status === "pago" && !produtoDoValor) {
+    console.error("[mercadopago webhook] valor fora do catálogo — acesso NÃO liberado", {
       referencia: dados.referencia,
-      esperadoCentavos: PRECO_CENTAVOS,
+      esperadoCentavos: "1900|2900",
       recebidoCentavos: dados.valorCentavos,
     });
     return NextResponse.json({ received: true });
   }
+  const produto = produtoPorReferencia(dados.referencia) ?? produtoDoValor;
 
   console.log("[mercadopago webhook]", {
     order_id: dados.orderId,
     referencia: dados.referencia,
+    produto: produto?.id ?? null,
     statusBruto: dados.statusBruto,
     status: dados.status,
     liberado: dados.status === "pago",

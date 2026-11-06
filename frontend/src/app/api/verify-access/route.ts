@@ -5,6 +5,7 @@ import {
   consultarPedido as consultarPedidoMP,
   mercadopagoConfigurado,
 } from "@/lib/mercadopago";
+import { produtoPorReferencia } from "@/lib/catalogo";
 
 /** Linha do `purchases.json` (compras aprovadas pelo admin). */
 interface CompraLocal {
@@ -30,10 +31,15 @@ export async function GET(request: Request) {
     }
     try {
       const cobranca = await consultarPedidoMP(mp);
+      // O produto comprado vai na referência da cobrança; sem ela, a tela não
+      // sabe qual curso liberar (e não libera nenhum).
+      const produto = produtoPorReferencia(cobranca.referencia);
       return NextResponse.json({
         valid: cobranca.status === "pago",
         order_id: cobranca.pedidoId,
         status: cobranca.statusBruto,
+        produto: produto?.id ?? null,
+        referencia: cobranca.referencia ?? "",
       });
     } catch (erro) {
       console.error("[verify-access] Mercado Pago:", erro);
