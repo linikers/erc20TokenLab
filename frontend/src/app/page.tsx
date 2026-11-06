@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { PRODUTOS } from "@/lib/catalogo";
 
 type ProvedorPix = "mercadopago";
 
@@ -260,6 +261,57 @@ export default function Home() {
               blockchain.
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* Trilha de cursos — os dois cursos novos + combo */}
+      <div className="max-w-5xl mx-auto" id="cursos">
+        <div className="text-center space-y-3 mb-8">
+          <span className="inline-block px-4 py-1 bg-blue-500/10 text-blue-400 text-xs font-bold rounded-full border border-blue-500/20 uppercase tracking-wider">
+            Trilha
+          </span>
+          <h2 className="text-3xl font-bold">Cursos</h2>
+          <p className="text-neutral-400 text-sm max-w-2xl mx-auto">
+            O curso completo do zero ao token, mais dois cursos curtos para quem já quer
+            colocar a mão no código: a interface Web3 e o checkout em Pix e Bitcoin.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          {PRODUTOS.map((p) => {
+            const destaque = p.id === "combo-web3";
+            const href = p.id === "curso-erc20" ? "#curso" : `/curso/${p.slug}`;
+            return (
+              <a
+                key={p.id}
+                href={href}
+                className={`flex flex-col justify-between p-6 rounded-2xl border transition-all hover:-translate-y-0.5 ${
+                  destaque
+                    ? "bg-gradient-to-br from-emerald-600/20 to-blue-600/20 border-emerald-500/40"
+                    : "bg-white/5 border-white/10 hover:border-white/25"
+                }`}
+              >
+                <div className="space-y-2">
+                  {destaque && (
+                    <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                      Melhor valor
+                    </span>
+                  )}
+                  <h3 className="font-bold leading-snug">{p.nome.replace("Curso: ", "")}</h3>
+                  <p className="text-xs text-neutral-400 leading-relaxed">{p.chamada}</p>
+                </div>
+                <div className="mt-4 flex items-end justify-between">
+                  <div>
+                    <span className="text-2xl font-extrabold">R$ {p.precoCentavos / 100}</span>
+                    <span className="ml-2 text-xs text-neutral-500 line-through">
+                      R$ {p.ancoraCentavos / 100}
+                    </span>
+                  </div>
+                  <span className="text-xs text-neutral-400">{p.modulos} módulos</span>
+                </div>
+              </a>
+            );
+          })}
         </div>
       </div>
 

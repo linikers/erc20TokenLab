@@ -1,12 +1,17 @@
 /**
- * Constantes do produto — uma fonte só para o preço, senão o valor cobrado e o
- * valor mostrado na landing divergem (e o webhook passa a recusar por valor).
+ * Compatibilidade: rotas e telas antigas importam daqui. O preço e o nome do
+ * produto agora vêm do catálogo (`catalogo.ts`) — um lugar só para preço, senão
+ * a landing mostra um valor e o webhook recusa o pagamento por divergência.
  */
 
-/** R$ 19,00 em centavos. */
-export const PRECO_CENTAVOS = 1900;
+import { getProduto, PRODUTO_PADRAO } from "./catalogo";
 
-export const PRODUTO = "Curso: Do Zero ao seu Token ERC20";
+const PADRAO = getProduto(PRODUTO_PADRAO);
+
+/** R$ 19,00 em centavos (curso principal). */
+export const PRECO_CENTAVOS = PADRAO.precoCentavos;
+
+export const PRODUTO = PADRAO.nome;
 
 /** Validade do QR PIX em minutos (default 60; `PAGBANK_PIX_MINUTOS` sobrepõe). */
 export function expiracaoPixMinutos(): number {

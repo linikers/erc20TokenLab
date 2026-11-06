@@ -4,7 +4,7 @@ import {
   mercadopagoConfigurado,
   MercadoPagoErro,
 } from "@/lib/mercadopago";
-import { PRECO_CENTAVOS, PRODUTO } from "@/lib/produto";
+import { getProduto } from "@/lib/catalogo";
 
 /**
  * Pix automático pelo **Mercado Pago** (Orders API).
@@ -20,7 +20,10 @@ import { PRECO_CENTAVOS, PRODUTO } from "@/lib/produto";
  */
 export async function POST(request: Request) {
   try {
-    const { email, name, taxId, ref } = await request.json();
+    const { email, name, taxId, ref, produto } = await request.json();
+    // Produto vem do catálogo: o preço cobrado é o do item escolhido, nunca um
+    // valor mandado pelo cliente.
+    const item = getProduto(produto);
 
     if (!email) {
       return NextResponse.json({ error: "Email é obrigatório" }, { status: 400 });
@@ -36,18 +39,19 @@ export async function POST(request: Request) {
       );
     }
 
-    const referencia = `ERC20-${Date.now()}-${String(email).slice(0, 12)}`;
+    const referencia = `${item.refPrefixo}-${Date.now()}-${String(email).slice(0, 12)}`;
 
     const cobranca = await criarCobrancaPix({
       referencia,
-      valorCentavos: PRECO_CENTAVOS,
-      descricao: PRODUTO,
+      valorCentavos: item.precoCentavos,
+      descricao: item.nome,
       cliente: { nome: name || "Cliente", email, taxId },
     });
 
     return NextResponse.json({
       provedor: "mercadopago",
       method: "pix_automatico",
+      produto: item.id,
       order_id: cobranca.pedidoId,
       payment_id: cobranca.pagamentoId,
       referencia,
@@ -57,7 +61,7 @@ export async function POST(request: Request) {
       amount: cobranca.valorCentavos / 100,
       status: cobranca.statusBruto ?? "action_required",
       status_url: `/api/mercadopago/status?order=${encodeURIComponent(cobranca.pedidoId)}`,
-      acesso_url: `/course?mp=${encodeURIComponent(cobranca.pedidoId)}`,
+      acesso_url: `${item.paginaAcesso}?mp=${encodeURIComponent(cobranca.pedidoId)}`,
       ref: ref || "",
     });
   } catch (erro) {

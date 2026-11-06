@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { writeFileSync, existsSync, readFileSync } from "fs";
 import path from "path";
-import { PRECO_CENTAVOS, PRODUTO } from "@/lib/produto";
+import { getProduto } from "@/lib/catalogo";
 import { gerarPixEstatico } from "@/lib/pix";
 
 const PURCHASES_PATH = path.join(process.cwd(), "src/data/purchases.json");
@@ -11,8 +11,6 @@ const PIX_KEY = "010d0101-9109-4cd1-bf05-cad25bebd1d2";
 const PIX_MERCHANT = "CURSO ERC20";
 const PIX_CITY = "SAO PAULO";
 
-const PRECO = PRECO_CENTAVOS / 100;
-
 function savePurchase(data: {
   id: string;
   email: string;
@@ -20,6 +18,7 @@ function savePurchase(data: {
   amount: number;
   method: string;
   ref?: string;
+  produto?: string;
 }) {
   const purchases = existsSync(PURCHASES_PATH)
     ? JSON.parse(readFileSync(PURCHASES_PATH, "utf-8"))
@@ -28,7 +27,7 @@ function savePurchase(data: {
     id: data.id,
     email: data.email,
     name: data.name || "",
-    product: "curso-erc20",
+    product: data.produto || "curso-erc20",
     amount: data.amount,
     currency: "BRL",
     status: "approved",
@@ -48,11 +47,16 @@ function savePurchase(data: {
  */
 export async function POST(request: Request) {
   try {
-    const { email, name, method = "pix", ref } = await request.json();
+    const { email, name, method = "pix", ref, produto } = await request.json();
 
     if (!email) {
       return NextResponse.json({ error: "Email é obrigatório" }, { status: 400 });
     }
+
+    // Preço e nome vêm do catálogo — o cliente escolhe o produto, nunca o valor.
+    const item = getProduto(produto);
+    const PRECO = item.precoCentavos / 100;
+    const PRODUTO = item.nome;
 
     const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
 
@@ -113,7 +117,7 @@ export async function POST(request: Request) {
           id: purchaseId,
           email,
           name: name || "",
-          product: "curso-erc20",
+          product: item.id,
           amount: PRECO,
           currency: "BRL",
           status: "pending",
@@ -159,7 +163,7 @@ export async function POST(request: Request) {
           id: purchaseId,
           email,
           name: name || "",
-          product: "curso-erc20",
+          product: item.id,
           amount: PRECO,
           currency: "BRL",
           status: "pending",
@@ -194,10 +198,11 @@ export async function POST(request: Request) {
       amount: PRECO,
       method: "demo",
       ref,
+      produto: item.id,
     });
 
     return NextResponse.json({
-      url: `/course?purchase_id=${purchaseId}`,
+      url: `${item.paginaAcesso}?purchase_id=${purchaseId}`,
       id: purchaseId,
       method: "demo",
       demo: true,
