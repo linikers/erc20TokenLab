@@ -272,13 +272,13 @@ export default function Home() {
           </span>
           <h2 className="text-3xl font-bold">Cursos</h2>
           <p className="text-neutral-400 text-sm max-w-2xl mx-auto">
-            O curso completo do zero ao token, mais dois cursos curtos para quem já quer
-            colocar a mão no código: a interface Web3 e o checkout em Pix e Bitcoin.
+            Além do curso completo (logo abaixo), dois cursos curtos para quem já quer colocar a
+            mão no código: a interface Web3 e o checkout em Pix e Bitcoin.
           </p>
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
-          {PRODUTOS.map((p) => {
+          {PRODUTOS.filter((p) => p.id !== "curso-erc20").map((p) => {
             const destaque = p.id === "combo-web3";
             const href = p.id === "curso-erc20" ? "#curso" : `/curso/${p.slug}`;
             return (
